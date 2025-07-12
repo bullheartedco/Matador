@@ -93,7 +93,7 @@ if st.button("Generate Audience Profile"):
 
                 try:
                     response = client.chat.completions.create(
-                        model="gpt-4",
+                        model="gpt-3.5-turbo",
                         messages=[
                             {"role": "system", "content": "You are a helpful assistant that generates local psychographic personas for brand strategists."},
                             {"role": "user", "content": prompt}
