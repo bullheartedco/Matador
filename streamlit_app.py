@@ -1,7 +1,6 @@
 import streamlit as st
 import requests
 from openai import OpenAI
-import time
 import json
 
 # ---------- CONFIG ----------
@@ -29,7 +28,6 @@ def get_census_data(zip_code):
         "key": st.secrets["CENSUS_API_KEY"]
     }
     response = requests.get(url, params=params)
-
     if response.status_code == 200:
         data = response.json()
         if len(data) > 1:
@@ -86,8 +84,7 @@ def format_structured_data(census, poi_types):
         return None
 
 def build_prompt(zip_codes, combined_data, mode):
-    mode_instruction = "cumulative" if mode == "Cumulative (combined)" else "individual"
-    prompt = f"You are a strategic anthropologist and behavioral branding expert.\n\n"
+    prompt = "You are a strategic anthropologist and behavioral branding expert.\n\n"
     if mode == "Cumulative (combined)":
         prompt += f"Based on the following cumulative data for ZIP codes {', '.join(zip_codes)}, identify the top 5 most representative audience personas across the region. Each persona must:\n"
     else:
@@ -107,7 +104,7 @@ def build_prompt(zip_codes, combined_data, mode):
 
     if mode == "Cumulative (combined)":
         prompt += "\nOrder all personas from highest to lowest estimated prevalence.\n"
-    prompt += f"\n{mode_instruction.capitalize()} Data:\n{json.dumps(combined_data, indent=2)}"
+    prompt += f"\nData:\n{json.dumps(combined_data, indent=2)}"
     return prompt
 
 # ---------- RUN ----------
