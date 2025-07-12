@@ -13,11 +13,12 @@ client = OpenAI(api_key=st.secrets["OPENAI_API_KEY"])
 # ---------- APP HEADER ----------
 st.title("🥊 Matador")
 st.subheader("Command the Crowd.")
-st.write("Enter up to 5 US ZIP codes to generate cumulative local audience personas with estimated prevalence and psychographic insight.")
+st.write("Enter up to 5 US ZIP codes to generate local audience personas with psychographic insight.")
 
 # ---------- INPUT ----------
 zip_codes_input = st.text_input("Enter up to 5 ZIP Codes, separated by commas")
 user_notes = st.text_area("Add any known local insights, cultural notes, or behaviors (optional)")
+mode = st.radio("Choose persona generation mode:", ["Cumulative (combined)", "Individual (per ZIP)"])
 
 # ---------- DATA FUNCTIONS ----------
 def get_census_data(zip_code):
@@ -84,36 +85,36 @@ def format_structured_data(census, poi_types):
     except:
         return None
 
-def build_prompt(zip_codes, combined_data):
-    return f"""
-You are a strategic anthropologist and behavioral branding expert.
+def build_prompt(zip_codes, combined_data, mode):
+    mode_instruction = "cumulative" if mode == "Cumulative (combined)" else "individual"
+    prompt = f"You are a strategic anthropologist and behavioral branding expert.\n\n"
+    if mode == "Cumulative (combined)":
+        prompt += f"Based on the following cumulative data for ZIP codes {', '.join(zip_codes)}, identify the top 5 most representative audience personas across the region. Each persona must:\n"
+    else:
+        prompt += f"Generate personas for each individual ZIP code below. For each ZIP, create up to 3 relevant personas.\n"
 
-Based on the following cumulative data for ZIP codes {', '.join(zip_codes)}, identify the top 5 most representative audience personas across the region. Each persona must:
-
+    prompt += """
 - Start with their prevalence score in parentheses (e.g., "(~28%) The Sun Chasers: ...")
-- Have a collective, behaviorally inspired name (e.g., "Sun Chasers", "Concrete Seekers")
+- Have a collective, behaviorally inspired name
 - Include a short lifestyle summary (values, habits, motivations, daily behaviors)
-- Identify the group's **Archetypal Opportunity** — the type of psychological energy they are drawn to. Choose one from these 12 modified Jungian archetypes: Innocent, Explorer, Sage, Hero, Rebel, Magician, Citizen, Lover, Jester, Caregiver, Creator, Sovereign.
-- Include 3 projected personality traits for the group (e.g., curious, intentional, bold)
+- Identify the group's **Archetypal Opportunity** — the type of psychological energy they are drawn to (choose from: Innocent, Explorer, Sage, Hero, Rebel, Magician, Citizen, Lover, Jester, Caregiver, Creator, Sovereign)
+- Include 3 projected personality traits
 - Include 3–5 behavioral or emotional motivators
 - Include a brief description of 2–3 secondary audience groups they influence
 - Include one sentence of strategic brand opportunity insight
-- List the top 5 national brands they are most likely to shop or admire, based on their traits (e.g., Patagonia, Trader Joe’s, Tesla)
-
-Order all personas from highest to lowest estimated prevalence.
-
-Be specific and behaviorally rich. Avoid vague generalizations.
-
-Cumulative Data:
-{json.dumps(combined_data, indent=2)}
+- List the top 5 national brands they are most likely to shop or admire
 """
+
+    if mode == "Cumulative (combined)":
+        prompt += "\nOrder all personas from highest to lowest estimated prevalence.\n"
+    prompt += f"\n{mode_instruction.capitalize()} Data:\n{json.dumps(combined_data, indent=2)}"
+    return prompt
 
 # ---------- RUN ----------
 if st.button("Generate Audience Profiles"):
     zip_codes = [z.strip() for z in zip_codes_input.split(",") if z.strip()]
 
     if 1 <= len(zip_codes) <= 5:
-        total_population = 0
         combined_data = []
 
         for zip_code in zip_codes:
@@ -123,7 +124,6 @@ if st.button("Generate Audience Profiles"):
                 poi_types = get_places_data(lat, lon) if lat and lon else []
 
                 if census_data:
-                    total_population += int(census_data.get("B01001_001E", 0))
                     structured = format_structured_data(census_data, poi_types)
                     structured["ZIP Code"] = zip_code
                     combined_data.append(structured)
@@ -131,20 +131,20 @@ if st.button("Generate Audience Profiles"):
                     st.error(f"Failed to retrieve Census data for {zip_code}.")
 
         if combined_data:
-            with st.spinner("Generating cumulative personas..."):
-                prompt = build_prompt(zip_codes, combined_data)
+            with st.spinner("Generating personas..."):
+                prompt = build_prompt(zip_codes, combined_data, mode)
                 try:
                     response = client.chat.completions.create(
                         model="gpt-3.5-turbo",
                         messages=[
-                            {"role": "system", "content": "You are a helpful assistant that generates multiple local psychographic personas for brand strategists."},
+                            {"role": "system", "content": "You are a helpful assistant that generates local psychographic personas for brand strategists."},
                             {"role": "user", "content": prompt}
                         ],
                         temperature=0.85,
-                        max_tokens=1800
+                        max_tokens=2000
                     )
                     output = response.choices[0].message.content
-                    st.success("Top 5 Representative Personas Generated")
+                    st.success("Audience Personas Generated")
                     st.markdown(output)
                 except Exception as e:
                     st.error(f"OpenAI error: {e}")
