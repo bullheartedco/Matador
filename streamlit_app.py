@@ -75,7 +75,8 @@ Based on the following data for ZIP code {zip_code}, identify the top 5 distinct
 
 - Have a collective, behaviorally inspired name (e.g., "Sun Chasers", "Concrete Seekers")
 - Include a short lifestyle summary (values, habits, motivations, daily behaviors)
-- Assign an archetype (choose from: Citizen, Sage, Rebel, Lover, Hero, Explorer, Creator, Jester, Caregiver, Innocent, Sovereign, Magician)
+- Identify the group's **Archetypal Opportunity** — the type of psychological identity or archetypal energy they are drawn to (e.g., "the Creator," "the Rebel")
+- Include 3 projected personality traits for the group (e.g., curious, intentional, bold)
 - Include 3–5 behavioral or emotional motivators
 - Include a brief description of 2–3 secondary audience groups they influence
 - Estimate a prevalence score (e.g., ~22% of local population)
