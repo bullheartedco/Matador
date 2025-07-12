@@ -90,6 +90,13 @@ def build_patron_prompt(zip_codes, user_notes, mode):
 if st.button("Generate Report"):
     zip_codes = [z.strip() for z in zip_codes_input.split(",") if z.strip()]
     if 1 <= len(zip_codes) <= 5:
+
+        # --- Build search terms safely ---
+        search_terms = []
+        for s in selected_service_styles:
+            search_terms += service_style_map.get(s, [])
+        search_terms += cuisine_styles
+
         tabs = st.tabs(["Patrons", "Competition", "White Space"])
 
         with tabs[0]:
