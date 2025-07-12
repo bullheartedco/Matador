@@ -1,10 +1,10 @@
 # Matador: Streamlit App for Local Patron & Competitor Analysis
 import streamlit as st
 import requests
-from openai import OpenAI
-import json
-from bs4 import BeautifulSoup
 import re
+import json
+from openai import OpenAI
+from bs4 import BeautifulSoup
 
 # ---------- CONFIG ----------
 st.set_page_config(page_title="Matador: Local Audience Profiler", layout="wide")
@@ -22,10 +22,7 @@ zip_codes_input = st.text_input("Enter up to 5 ZIP Codes, separated by commas")
 user_notes = st.text_area("Add any known local insights, cultural notes, or behaviors (optional)")
 mode = st.radio("Choose persona generation mode:", ["Cumulative (combined)", "Individual (per ZIP)"])
 
-service_styles = st.multiselect(
-    "Select Service Style(s):",
-    ["Full Service", "Fast Casual", "Quick Service", "Café"]
-)
+service_styles = st.multiselect("Select Service Style(s):", ["Full Service", "Fast Casual", "Quick Service", "Café"])
 
 cuisine_styles = st.multiselect(
     "Select Cuisine Type(s):",
@@ -48,22 +45,6 @@ if competitor_mode == "Manual Entry":
                 manual_competitors.append({"name": name, "website": website})
 
 # ---------- DATA FUNCTIONS ----------
-def get_census_data(zip_code):
-    url = "https://api.census.gov/data/2021/acs/acs5"
-    params = {
-        "get": "NAME,B01001_001E,B19013_001E,B02001_002E,B02001_003E,B02001_005E",
-        "for": f"zip code tabulation area:{zip_code}",
-        "key": st.secrets["CENSUS_API_KEY"]
-    }
-    response = requests.get(url, params=params)
-    if response.status_code == 200:
-        data = response.json()
-        if len(data) > 1:
-            labels = data[0]
-            values = data[1]
-            return dict(zip(labels, values))
-    return None
-
 def get_lat_lon(zip_code):
     url = f"https://maps.googleapis.com/maps/api/geocode/json?address={zip_code}&key={st.secrets['GOOGLE_API_KEY']}"
     response = requests.get(url)
@@ -178,11 +159,13 @@ def sort_personas_by_prevalence(output):
     scored = []
     for block in persona_blocks:
         match = re.search(r"(?i)Prevalence Score.*?(\d+)%", block)
-        if match:
+        name_match = re.search(r"^(\d+\.\s+)?(.+?)\n", block.strip())
+        if match and name_match:
             score = int(match.group(1))
-            scored.append((score, block))
+            name = name_match.group(2).strip()
+            scored.append((score, name, block))
     scored.sort(reverse=True)
-    return [b for _, b in scored]
+    return [(name, score, b) for score, name, b in scored]
 
 # ---------- RUN ----------
 if st.button("Generate Analysis"):
@@ -190,20 +173,15 @@ if st.button("Generate Analysis"):
     if 1 <= len(zip_codes) <= 5:
         search_terms = service_styles + cuisine_styles
         all_competitors = []
-        all_latlon = []
 
         for zip_code in zip_codes:
             lat, lon = get_lat_lon(zip_code)
             if lat and lon:
-                all_latlon.append((zip_code, lat, lon))
-
-            if competitor_mode == "Auto via Google Places" and lat and lon:
-                competitors = get_places_data(lat, lon, search_terms)
-                all_competitors.extend(competitors)
+                if competitor_mode == "Auto via Google Places":
+                    competitors = get_places_data(lat, lon, search_terms)
+                    all_competitors.extend(competitors)
 
         all_competitors.extend(manual_competitors)
-
-        # Deduplicate competitors by name
         seen = set()
         unique_competitors = []
         for c in all_competitors:
@@ -211,14 +189,13 @@ if st.button("Generate Analysis"):
                 unique_competitors.append(c)
                 seen.add(c["name"])
 
-        # Sort and limit to 10
         sorted_comps = sorted(
             unique_competitors,
             key=lambda x: (x.get("rating", 0) or 0) * (x.get("review_count", 0) or 0),
             reverse=True
         )[:10]
 
-        tabs = st.tabs(["Patrons", "Competition", "White Space"])
+        tabs = st.tabs(["Patrons", "Competition"])
 
         with tabs[0]:
             with st.spinner("Generating persona profiles..."):
@@ -232,12 +209,8 @@ if st.button("Generate Analysis"):
                     )
                     output = response.choices[0].message.content
                     sorted_personas = sort_personas_by_prevalence(output)
-                    for persona in sorted_personas:
-                        title_match = re.search(r"^([A-Za-z\s]+)\n", persona.strip())
-                        prevalence_match = re.search(r"Prevalence Score.*?(\d+%)", persona)
-                        title = title_match.group(1) if title_match else "Persona"
-                        prevalence = prevalence_match.group(1) if prevalence_match else ""
-                        st.markdown(f"### {title} — {prevalence}")
+                    for title, prevalence, persona in sorted_personas:
+                        st.markdown(f"## {title} — {prevalence}%")
                         st.markdown(persona)
                 except Exception as e:
                     st.error(f"Error generating persona profiles: {e}")
@@ -254,26 +227,5 @@ if st.button("Generate Analysis"):
                     st.markdown(analysis)
                 else:
                     st.markdown("_No website available for this competitor._")
-
-        with tabs[2]:
-            st.subheader("Opportunity: Brand White Space")
-            st.info("Analyzing patron data and competitor traits to reveal unique opportunities…")
-            try:
-                whitespace_prompt = """
-                Based on the competitive restaurant landscape and the local audience personas previously generated, analyze and identify 3 potential personality trait combinations for a new restaurant brand that would stand out in the market.
-                For each trait combination:
-                - Describe the opportunity in 1–2 sentences
-                - Link to the patron groups from earlier who would be most likely attracted to that brand expression
-                - Avoid repeating personality traits already used by the competitors
-                """
-                response = client.chat.completions.create(
-                    model="gpt-3.5-turbo",
-                    messages=[{"role": "user", "content": whitespace_prompt}],
-                    temperature=0.75,
-                    max_tokens=1000
-                )
-                st.markdown(response.choices[0].message.content)
-            except Exception as e:
-                st.error(f"Error generating white space analysis: {e}")
     else:
         st.warning("Please enter between 1 and 5 ZIP codes, separated by commas.")
