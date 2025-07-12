@@ -12,12 +12,26 @@ client = OpenAI(api_key=st.secrets["OPENAI_API_KEY"])
 # ---------- APP HEADER ----------
 st.title("🥊 Matador")
 st.subheader("Command the Crowd.")
-st.write("Enter up to 5 US ZIP codes to generate local audience personas with psychographic insight.")
+st.write("Enter up to 5 US ZIP codes to generate local audience personas and analyze competitive restaurant brands.")
 
 # ---------- INPUT ----------
 zip_codes_input = st.text_input("Enter up to 5 ZIP Codes, separated by commas")
 user_notes = st.text_area("Add any known local insights, cultural notes, or behaviors (optional)")
 mode = st.radio("Choose persona generation mode:", ["Cumulative (combined)", "Individual (per ZIP)"])
+
+service_styles = st.multiselect(
+    "Select Service Style(s):",
+    ["Full Service", "Fast Casual", "Quick Service", "Café"]
+)
+
+cuisine_styles = st.multiselect(
+    "Select Cuisine Type(s):",
+    [
+        "Mexican", "Chinese", "Japanese", "Italian", "Thai", "Vietnamese",
+        "Indian", "American", "Korean", "Mediterranean", "Seafood",
+        "Barbecue", "Vegan", "Vegetarian", "Burgers", "Pizza", "Coffee", "Bakery"
+    ]
+)
 
 # ---------- DATA FUNCTIONS ----------
 def get_census_data(zip_code):
@@ -46,18 +60,16 @@ def get_lat_lon(zip_code):
             return location["lat"], location["lng"]
     return None, None
 
-def get_places_data(lat, lon):
-    types = []
-    url = f"https://maps.googleapis.com/maps/api/place/nearbysearch/json?location={lat},{lon}&radius=5000&type=point_of_interest&key={st.secrets['GOOGLE_API_KEY']}"
+def get_places_data(lat, lon, cuisine_styles):
+    keyword = "+".join(cuisine_styles)
+    url = f"https://maps.googleapis.com/maps/api/place/nearbysearch/json?location={lat},{lon}&radius=5000&type=restaurant&keyword={keyword}&key={st.secrets['GOOGLE_API_KEY']}"
     response = requests.get(url)
+    places = []
     if response.status_code == 200:
         data = response.json()
         for result in data.get("results", []):
-            for t in result.get("types", []):
-                types.append(t)
-        unique_types = list(set(types))
-        return unique_types[:10]  # Limit for prompt clarity
-    return []
+            places.append({"name": result.get("name"), "vicinity": result.get("vicinity")})
+    return places[:10]
 
 def format_structured_data(census, poi_types):
     try:
@@ -83,7 +95,7 @@ def format_structured_data(census, poi_types):
     except:
         return None
 
-def build_prompt(zip_codes, combined_data, mode):
+def build_patron_prompt(zip_codes, combined_data, mode):
     prompt = "You are a strategic anthropologist and behavioral branding expert.\n\n"
     if mode == "Cumulative (combined)":
         prompt += f"Based on the following cumulative data for ZIP codes {', '.join(zip_codes)}, identify the top 5 most representative audience personas across the region. Each persona must:\n"
@@ -107,43 +119,88 @@ def build_prompt(zip_codes, combined_data, mode):
     prompt += f"\nData:\n{json.dumps(combined_data, indent=2)}"
     return prompt
 
-# ---------- RUN ----------
-if st.button("Generate Audience Profiles"):
-    zip_codes = [z.strip() for z in zip_codes_input.split(",") if z.strip()]
+def build_opportunity_prompt(patrons_summary, competitors_summary):
+    return f"""
+You are a restaurant brand strategist.
 
+Based on the following audience personas and competitor brand personalities:
+
+---
+
+**Patron Personas:**
+{patrons_summary}
+
+**Competitor Brands:**
+{competitors_summary}
+
+---
+
+Identify three personality traits that represent opportunity whitespace. For each:
+- Explain why it’s open
+- Link it to specific patron groups that would love it
+- Keep it concise and strategic
+"""
+
+# ---------- RUN ----------
+if st.button("Generate Analysis"):
+    zip_codes = [z.strip() for z in zip_codes_input.split(",") if z.strip()]
     if 1 <= len(zip_codes) <= 5:
         combined_data = []
+        competitor_list = []
+        patrons_output = ""
 
         for zip_code in zip_codes:
             with st.spinner(f"Collecting data for {zip_code}..."):
                 census_data = get_census_data(zip_code)
                 lat, lon = get_lat_lon(zip_code)
-                poi_types = get_places_data(lat, lon) if lat and lon else []
+                poi_types = get_places_data(lat, lon, cuisine_styles) if lat and lon else []
 
                 if census_data:
-                    structured = format_structured_data(census_data, poi_types)
+                    structured = format_structured_data(census_data, [p['name'] for p in poi_types])
                     structured["ZIP Code"] = zip_code
                     combined_data.append(structured)
+                    competitor_list.extend(poi_types)
                 else:
                     st.error(f"Failed to retrieve Census data for {zip_code}.")
 
         if combined_data:
-            with st.spinner("Generating personas..."):
-                prompt = build_prompt(zip_codes, combined_data, mode)
-                try:
-                    response = client.chat.completions.create(
-                        model="gpt-3.5-turbo",
-                        messages=[
-                            {"role": "system", "content": "You are a helpful assistant that generates local psychographic personas for brand strategists."},
-                            {"role": "user", "content": prompt}
-                        ],
-                        temperature=0.85,
-                        max_tokens=2000
-                    )
-                    output = response.choices[0].message.content
-                    st.success("Audience Personas Generated")
-                    st.markdown(output)
-                except Exception as e:
-                    st.error(f"OpenAI error: {e}")
+            tab1, tab2 = st.tabs(["🧬 Patrons", "🥊 Competition"])
+
+            with tab1:
+                with st.spinner("Generating personas..."):
+                    prompt = build_patron_prompt(zip_codes, combined_data, mode)
+                    try:
+                        response = client.chat.completions.create(
+                            model="gpt-3.5-turbo",
+                            messages=[{"role": "user", "content": prompt}],
+                            temperature=0.85,
+                            max_tokens=2000
+                        )
+                        patrons_output = response.choices[0].message.content
+                        st.markdown(patrons_output)
+                    except Exception as e:
+                        st.error(f"OpenAI error: {e}")
+
+            with tab2:
+                st.markdown("### Selected Competitor Restaurants")
+                competitors_summary = ""
+                for r in competitor_list:
+                    competitors_summary += f"- {r['name']} at {r['vicinity']}\n"
+                    st.markdown(f"**{r['name']}** — {r['vicinity']}")
+                    st.markdown("\n_(Yelp Rating, Followers, Personality Traits & Messaging will be added via API integration.)_\n")
+
+                if patrons_output and competitors_summary:
+                    st.markdown("### 🎯 Opportunity Personality Traits")
+                    opp_prompt = build_opportunity_prompt(patrons_output, competitors_summary)
+                    try:
+                        opp_response = client.chat.completions.create(
+                            model="gpt-3.5-turbo",
+                            messages=[{"role": "user", "content": opp_prompt}],
+                            temperature=0.85,
+                            max_tokens=1000
+                        )
+                        st.markdown(opp_response.choices[0].message.content)
+                    except Exception as e:
+                        st.error(f"OpenAI error: {e}")
     else:
         st.warning("Please enter between 1 and 5 ZIP codes, separated by commas.")
