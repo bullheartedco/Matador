@@ -98,6 +98,7 @@ Based on the following cumulative data for ZIP codes {', '.join(zip_codes)}, ide
 - Include a brief description of 2–3 secondary audience groups they influence
 - Estimate a prevalence score (e.g., ~22% of total ZIP region population)
 - Include one sentence of strategic brand opportunity insight
+- List the top 5 national brands they are most likely to shop or admire, based on their traits (e.g., Patagonia, Trader Joe’s, Tesla)
 
 Be specific and behaviorally rich. Avoid vague generalizations.
 
