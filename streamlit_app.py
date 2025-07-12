@@ -2,6 +2,7 @@ import streamlit as st
 import requests
 from openai import OpenAI
 import json
+from bs4 import BeautifulSoup
 
 # ---------- CONFIG ----------
 st.set_page_config(page_title="Matador: Local Audience Profiler", layout="centered")
@@ -72,9 +73,43 @@ def get_places_data(lat, lon, cuisine_styles):
                 "name": result.get("name"),
                 "vicinity": result.get("vicinity"),
                 "rating": result.get("rating"),
-                "review_count": result.get("user_ratings_total")
+                "review_count": result.get("user_ratings_total"),
+                "website": result.get("website", "")
             })
     return places[:10]
+
+def get_website_text(url):
+    try:
+        response = requests.get(url, timeout=10)
+        soup = BeautifulSoup(response.text, 'html.parser')
+        return soup.get_text(separator=' ', strip=True)
+    except Exception as e:
+        return f"Error fetching website content: {e}"
+
+def analyze_brand_with_gpt(name, address, website_text):
+    prompt = f"""
+    You are a brand strategist. Based on the following content from the restaurant's website, analyze and return:
+
+    1. The brand’s tone of voice
+    2. Three personality traits that reflect the brand
+    3. Their core brand message or positioning
+    4. What they emphasize in marketing (e.g. ingredients, experience, convenience)
+    5. Overall impression in 1 sentence
+
+    Restaurant Name: {name}
+    Location: {address}
+    Website Text: {website_text[:3000]}  # limit to avoid token overflow
+    """
+    try:
+        response = client.chat.completions.create(
+            model="gpt-3.5-turbo",
+            messages=[{"role": "user", "content": prompt}],
+            temperature=0.7,
+            max_tokens=500
+        )
+        return response.choices[0].message.content
+    except Exception as e:
+        return f"Error analyzing brand: {e}"
 
 def format_structured_data(census, poi_types):
     try:
@@ -194,8 +229,13 @@ if st.button("Generate Analysis"):
                     st.markdown(f"**{r['name']}** — {r['vicinity']}")
                     st.markdown(f"""
 - **Google Rating:** ⭐ {r.get("rating", "N/A")} ({r.get("review_count", "0")} reviews)
-- _(Social followers, traits & messaging to be added)_
 """)
+                    if r.get("website"):
+                        website_text = get_website_text(r['website'])
+                        brand_analysis = analyze_brand_with_gpt(r['name'], r['vicinity'], website_text)
+                        st.markdown(brand_analysis)
+                    else:
+                        st.markdown("_No website provided for analysis._")
 
                 if patrons_output and competitors_summary:
                     st.markdown("### 🌟 Opportunity Personality Traits")
