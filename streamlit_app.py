@@ -25,11 +25,18 @@ user_notes = st.text_area("Add any known local insights, cultural notes, or beha
 def get_census_data(zip_code):
     url = f"https://api.census.gov/data/2020/dec/pl?get=NAME,P1_001N,P2_005N,P2_006N,P2_007N&for=zip%20code%20tabulation%20area:{zip_code}"
     response = requests.get(url)
+    
+    # 👇 Add this to show response status and data
+    st.write("Census API URL:", url)
+    st.write("Status Code:", response.status_code)
+    st.write("Raw Response:", response.text)
+    
     if response.status_code == 200:
         data = response.json()
-        labels = data[0]
-        values = data[1]
-        return dict(zip(labels, values))
+        if len(data) > 1:
+            labels = data[0]
+            values = data[1]
+            return dict(zip(labels, values))
     return None
 
 def format_structured_data(census):
