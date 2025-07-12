@@ -1,19 +1,11 @@
-# 🎈 Blank app template
+# Matador – Local Audience Profiler
 
-A simple Streamlit app template for you to modify!
+**Matador** is a strategic tool for brand builders to identify nuanced audience profiles and psychographic motivators within any ZIP code. It uses free public data (like U.S. Census) and AI-generated insights to help brands understand their patrons — and the people they influence.
 
-[![Open in Streamlit](https://static.streamlit.io/badges/streamlit_badge_black_white.svg)](https://blank-app-template.streamlit.app/)
+## Features
+- ZIP-code-based persona generation
+- Psychographic and behavioral motivators
+- Archetype mapping
+- Brand opportunity insight
 
-### How to run it on your own machine
-
-1. Install the requirements
-
-   ```
-   $ pip install -r requirements.txt
-   ```
-
-2. Run the app
-
-   ```
-   $ streamlit run streamlit_app.py
-   ```
+Built with Streamlit + OpenAI
