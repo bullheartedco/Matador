@@ -90,16 +90,17 @@ You are a strategic anthropologist and behavioral branding expert.
 
 Based on the following cumulative data for ZIP codes {', '.join(zip_codes)}, identify the top 5 most representative audience personas across the region. Each persona must:
 
+- Start with their prevalence score in parentheses (e.g., "(~28%) The Sun Chasers: ...")
 - Have a collective, behaviorally inspired name (e.g., "Sun Chasers", "Concrete Seekers")
 - Include a short lifestyle summary (values, habits, motivations, daily behaviors)
 - Identify the group's **Archetypal Opportunity** — the type of psychological energy they are drawn to. Choose one from these 12 modified Jungian archetypes: Innocent, Explorer, Sage, Hero, Rebel, Magician, Citizen, Lover, Jester, Caregiver, Creator, Sovereign.
 - Include 3 projected personality traits for the group (e.g., curious, intentional, bold)
 - Include 3–5 behavioral or emotional motivators
 - Include a brief description of 2–3 secondary audience groups they influence
-- Estimate a prevalence score (e.g., ~22% of total ZIP region population)
 - Include one sentence of strategic brand opportunity insight
 - List the top 5 national brands they are most likely to shop or admire, based on their traits (e.g., Patagonia, Trader Joe’s, Tesla)
-- Order all personas from highest to lowest estimated prevalence
+
+Order all personas from highest to lowest estimated prevalence.
 
 Be specific and behaviorally rich. Avoid vague generalizations.
 
