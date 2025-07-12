@@ -113,7 +113,6 @@ def get_website_text(url):
 def analyze_brand_with_gpt(name, address, website_text):
     prompt = f"""
     You are a brand strategist. Based on the following content from the restaurant's website, analyze and return:
-
     1. The brand’s tone of voice
     2. Three personality traits that reflect the brand
     3. Their core brand message or positioning
@@ -151,6 +150,20 @@ def build_patron_prompt(zip_codes, user_notes, mode):
     - Influenced Groups (2–3 audience types they influence)
     - 5 Brands They Love (based on personality + values)
     - Prevalence Score (estimate % in market)
+    """
+    return base
+
+def build_whitespace_prompt(zip_codes, competitors, patron_profiles):
+    base = f"""
+    You are a brand strategist. Analyze the whitespace opportunity for a new restaurant brand based on the following:
+    - ZIP Codes: {', '.join(zip_codes)}
+    - Competitor Personalities: {[c['name'] for c in competitors]}
+    - Patron Groups: {patron_profiles}
+
+    Output:
+    1. Three suggested personality traits for a new brand
+    2. A sentence or two explaining why each is a whitespace
+    3. The Patron personas most likely to be attracted to each trait
     """
     return base
 
@@ -230,8 +243,19 @@ if st.button("Generate Analysis"):
 
         with tabs[2]:
             st.subheader("Personality Whitespace Opportunities")
-            st.markdown(
-                "We’ll analyze gaps in brand personality traits among the top competitors and recommend 3 distinct traits that aren’t dominant, along with the Patron groups most likely to be attracted to each. Coming soon."
-            )
+            with st.spinner("Analyzing whitespace opportunities..."):
+                try:
+                    patron_summaries = ", ".join([f"{title} ({score}%)" for title, score, _ in sorted_personas])
+                    whitespace_prompt = build_whitespace_prompt(zip_codes, sorted_comps, patron_summaries)
+                    whitespace_response = client.chat.completions.create(
+                        model="gpt-3.5-turbo",
+                        messages=[{"role": "user", "content": whitespace_prompt}],
+                        temperature=0.7,
+                        max_tokens=700
+                    )
+                    whitespace_output = whitespace_response.choices[0].message.content
+                    st.markdown(whitespace_output)
+                except Exception as e:
+                    st.error(f"Error generating whitespace analysis: {e}")
     else:
         st.warning("Please enter between 1 and 5 ZIP codes, separated by commas.")
