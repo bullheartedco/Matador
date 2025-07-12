@@ -4,6 +4,7 @@ import requests
 from openai import OpenAI
 import json
 from bs4 import BeautifulSoup
+import re
 
 # ---------- CONFIG ----------
 st.set_page_config(page_title="Matador: Local Audience Profiler", layout="wide")
@@ -172,6 +173,17 @@ def build_patron_prompt(zip_codes, user_notes, mode):
     """
     return base
 
+def sort_personas_by_prevalence(output):
+    persona_blocks = re.split(r"(?=\n\d+\.\s)|(?=^\d+\.\s)", output.strip())
+    scored = []
+    for block in persona_blocks:
+        match = re.search(r"(?i)Prevalence Score.*?(\d+)%", block)
+        if match:
+            score = int(match.group(1))
+            scored.append((score, block))
+    scored.sort(reverse=True)
+    return [b for _, b in scored]
+
 # ---------- RUN ----------
 if st.button("Generate Analysis"):
     zip_codes = [z.strip() for z in zip_codes_input.split(",") if z.strip()]
@@ -219,9 +231,14 @@ if st.button("Generate Analysis"):
                         max_tokens=2000
                     )
                     output = response.choices[0].message.content
-
-                    st.markdown(output)
-
+                    sorted_personas = sort_personas_by_prevalence(output)
+                    for persona in sorted_personas:
+                        title_match = re.search(r"^([A-Za-z\s]+)\n", persona.strip())
+                        prevalence_match = re.search(r"Prevalence Score.*?(\d+%)", persona)
+                        title = title_match.group(1) if title_match else "Persona"
+                        prevalence = prevalence_match.group(1) if prevalence_match else ""
+                        st.markdown(f"### {title} — {prevalence}")
+                        st.markdown(persona)
                 except Exception as e:
                     st.error(f"Error generating persona profiles: {e}")
 
