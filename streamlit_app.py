@@ -1,9 +1,8 @@
 # Matador: Streamlit App for Local Patron & Competitor Analysis
 import streamlit as st
 import requests
-import re
-import json
 from openai import OpenAI
+import json
 from bs4 import BeautifulSoup
 
 # ---------- CONFIG ----------
@@ -22,7 +21,10 @@ zip_codes_input = st.text_input("Enter up to 5 ZIP Codes, separated by commas")
 user_notes = st.text_area("Add any known local insights, cultural notes, or behaviors (optional)")
 mode = st.radio("Choose persona generation mode:", ["Cumulative (combined)", "Individual (per ZIP)"])
 
-service_styles = st.multiselect("Select Service Style(s):", ["Full Service", "Fast Casual", "Quick Service", "Café"])
+service_styles = st.multiselect(
+    "Select Service Style(s):",
+    ["Full Service", "Fast Casual", "Quick Service", "Café"]
+)
 
 cuisine_styles = st.multiselect(
     "Select Cuisine Type(s):",
@@ -45,6 +47,22 @@ if competitor_mode == "Manual Entry":
                 manual_competitors.append({"name": name, "website": website})
 
 # ---------- DATA FUNCTIONS ----------
+def get_census_data(zip_code):
+    url = "https://api.census.gov/data/2021/acs/acs5"
+    params = {
+        "get": "NAME,B01001_001E,B19013_001E,B02001_002E,B02001_003E,B02001_005E",
+        "for": f"zip code tabulation area:{zip_code}",
+        "key": st.secrets["CENSUS_API_KEY"]
+    }
+    response = requests.get(url, params=params)
+    if response.status_code == 200:
+        data = response.json()
+        if len(data) > 1:
+            labels = data[0]
+            values = data[1]
+            return dict(zip(labels, values))
+    return None
+
 def get_lat_lon(zip_code):
     url = f"https://maps.googleapis.com/maps/api/geocode/json?address={zip_code}&key={st.secrets['GOOGLE_API_KEY']}"
     response = requests.get(url)
@@ -113,6 +131,7 @@ def get_website_text(url):
 def analyze_brand_with_gpt(name, address, website_text):
     prompt = f"""
     You are a brand strategist. Based on the following content from the restaurant's website, analyze and return:
+
     1. The brand’s tone of voice
     2. Three personality traits that reflect the brand
     3. Their core brand message or positioning
@@ -153,18 +172,18 @@ def build_patron_prompt(zip_codes, user_notes, mode):
     """
     return base
 
-def sort_personas_by_prevalence(output):
-    persona_blocks = re.split(r"(?=\n\d+\.\s)|(?=^\d+\.\s)", output.strip())
-    scored = []
-    for block in persona_blocks:
-        match = re.search(r"(?i)Prevalence Score.*?(\d+)%", block)
-        name_match = re.search(r"Persona Name[:\-\s]*([A-Za-z0-9 '\"&]+)", block)
-        if match and name_match:
-            score = int(match.group(1))
-            name = name_match.group(1).strip()
-            scored.append((score, name, block))
-    scored.sort(reverse=True)
-    return [(name, score, b) for score, name, b in scored]
+def build_whitespace_prompt(competitors_summary, patrons_summary):
+    return f"""
+    Based on the competitor brand summaries:
+    {competitors_summary}
+
+    And these patron persona profiles:
+    {patrons_summary}
+
+    Identify 3 whitespace opportunities for a new restaurant brand to stand apart. For each, provide:
+    - A unique combination of 3 personality traits not represented by competitors
+    - Patron groups most likely to be attracted to each combination
+    """
 
 # ---------- RUN ----------
 if st.button("Generate Analysis"):
@@ -172,15 +191,20 @@ if st.button("Generate Analysis"):
     if 1 <= len(zip_codes) <= 5:
         search_terms = service_styles + cuisine_styles
         all_competitors = []
+        all_latlon = []
 
         for zip_code in zip_codes:
             lat, lon = get_lat_lon(zip_code)
             if lat and lon:
-                if competitor_mode == "Auto via Google Places":
-                    competitors = get_places_data(lat, lon, search_terms)
-                    all_competitors.extend(competitors)
+                all_latlon.append((zip_code, lat, lon))
+
+            if competitor_mode == "Auto via Google Places" and lat and lon:
+                competitors = get_places_data(lat, lon, search_terms)
+                all_competitors.extend(competitors)
 
         all_competitors.extend(manual_competitors)
+
+        # Deduplicate competitors by name
         seen = set()
         unique_competitors = []
         for c in all_competitors:
@@ -188,6 +212,7 @@ if st.button("Generate Analysis"):
                 unique_competitors.append(c)
                 seen.add(c["name"])
 
+        # Sort and limit to 10
         sorted_comps = sorted(
             unique_competitors,
             key=lambda x: (x.get("rating", 0) or 0) * (x.get("review_count", 0) or 0),
@@ -198,24 +223,39 @@ if st.button("Generate Analysis"):
 
         with tabs[0]:
             with st.spinner("Generating persona profiles..."):
-                prompt = build_patron_prompt(zip_codes, user_notes, mode)
+                patron_prompt = build_patron_prompt(zip_codes, user_notes, mode)
                 try:
                     response = client.chat.completions.create(
                         model="gpt-3.5-turbo",
-                        messages=[{"role": "user", "content": prompt}],
+                        messages=[{"role": "user", "content": patron_prompt}],
                         temperature=0.8,
                         max_tokens=2000
                     )
-                    output = response.choices[0].message.content
-                    sorted_personas = sort_personas_by_prevalence(output)
-                    for title, prevalence, persona in sorted_personas:
-                        st.markdown(f"### {title} — {prevalence}%")
+                    raw_output = response.choices[0].message.content
+
+                    personas = raw_output.split("\n\n")
+                    persona_blocks = [p for p in personas if "Prevalence Score" in p]
+
+                    sorted_personas = sorted(
+                        persona_blocks,
+                        key=lambda x: int(x.split("Prevalence Score:")[-1].replace("%", "").strip()),
+                        reverse=True
+                    )
+
+                    for persona in sorted_personas:
+                        name_line = next((line for line in persona.split("\n") if line.strip() and not line.startswith("-")), "Persona")
+                        prevalence_line = next((line for line in persona.split("\n") if "Prevalence Score:" in line), "")
+                        prevalence = prevalence_line.replace("Prevalence Score:", "").strip()
+
+                        st.markdown(f"### {name_line} ({prevalence})")
                         st.markdown(persona)
+
                 except Exception as e:
                     st.error(f"Error generating persona profiles: {e}")
 
         with tabs[1]:
             st.subheader(f"Top {len(sorted_comps)} Competitor Analysis")
+            comp_summary = ""
             for comp in sorted_comps:
                 st.markdown(f"### {comp['name']}")
                 st.markdown(f"_Location:_ {comp.get('vicinity', 'Manual Entry')}")
@@ -224,34 +264,23 @@ if st.button("Generate Analysis"):
                     website_text = get_website_text(comp['website'])
                     analysis = analyze_brand_with_gpt(comp['name'], comp.get('vicinity', ''), website_text)
                     st.markdown(analysis)
+                    comp_summary += f"{comp['name']}: {analysis}\n\n"
                 else:
                     st.markdown("_No website available for this competitor._")
 
         with tabs[2]:
-            st.subheader("Personality Whitespace Opportunities")
             with st.spinner("Analyzing whitespace opportunities..."):
                 try:
-                    patron_names = [title for title, _, _ in sorted_personas]
-                    comp_names = [c['name'] for c in sorted_comps]
-                    whitespace_prompt = f"""
-                    You are a brand strategist. Based on the following audience groups and existing competitors, identify whitespace opportunities in brand personality:
-
-                    Patrons: {', '.join(patron_names)}
-                    Competitors: {', '.join(comp_names)}
-
-                    Output:
-                    - 3 distinct sets of 3 personality traits that are not currently well-represented by the competitors.
-                    - For each trait set, list which patron group(s) are most likely to be attracted to that brand personality.
-                    Format in a clear and skimmable list.
-                    """
-                    whitespace_response = client.chat.completions.create(
+                    whitespace_prompt = build_whitespace_prompt(comp_summary, raw_output)
+                    ws_response = client.chat.completions.create(
                         model="gpt-3.5-turbo",
                         messages=[{"role": "user", "content": whitespace_prompt}],
-                        temperature=0.7,
-                        max_tokens=700
+                        temperature=0.8,
+                        max_tokens=1000
                     )
-                    st.markdown(whitespace_response.choices[0].message.content)
+                    st.markdown(ws_response.choices[0].message.content)
                 except Exception as e:
                     st.error(f"Error generating whitespace analysis: {e}")
+
     else:
         st.warning("Please enter between 1 and 5 ZIP codes, separated by commas.")
