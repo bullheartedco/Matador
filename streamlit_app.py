@@ -12,7 +12,7 @@ st.set_page_config(page_title="Matador: Local Audience Profiler", layout="wide")
 client = OpenAI(api_key=st.secrets["OPENAI_API_KEY"])
 
 # ---------- APP HEADER ----------
-st.title("🥊 Matador")
+st.title("💃🏻 Matador")
 st.subheader("Command the Crowd.")
 st.write("Enter up to 5 US ZIP codes to generate local audience personas and analyze competitive restaurant brands.")
 
@@ -153,43 +153,86 @@ def analyze_brand_with_gpt(name, address, website_text):
     except Exception as e:
         return f"Error analyzing brand: {e}"
 
+def build_patron_prompt(zip_codes, user_notes, mode):
+    base = f"""
+    You are a consumer behavior analyst helping a brand strategist understand the local market across these ZIP codes: {', '.join(zip_codes)}.
+
+    Use the following insights and data from the U.S. Census and local observation notes:
+    Notes: {user_notes}
+
+    Output 5 persona profiles that are representative of the population across these ZIPs. For each include:
+    - Persona Name (use descriptive names like "Sun Chasers")
+    - Lifestyle Summary
+    - Motivators (behavioral and emotional drivers)
+    - Archetypal Opportunity (what they're psychologically drawn to)
+    - 3 Personality Traits
+    - Influenced Groups (2–3 audience types they influence)
+    - 5 Brands They Love (based on personality + values)
+    - Prevalence Score (estimate % in market)
+    """
+    return base
+
 # ---------- RUN ----------
 if st.button("Generate Analysis"):
     zip_codes = [z.strip() for z in zip_codes_input.split(",") if z.strip()]
     if 1 <= len(zip_codes) <= 5:
         search_terms = service_styles + cuisine_styles
         all_competitors = []
+        all_latlon = []
 
         for zip_code in zip_codes:
-            census_data = get_census_data(zip_code)
             lat, lon = get_lat_lon(zip_code)
+            if lat and lon:
+                all_latlon.append((zip_code, lat, lon))
 
             if competitor_mode == "Auto via Google Places" and lat and lon:
                 competitors = get_places_data(lat, lon, search_terms)
-            else:
-                competitors = []
-
-            all_competitors.extend(competitors)
+                all_competitors.extend(competitors)
 
         all_competitors.extend(manual_competitors)
 
-        # Limit to Top 10 by score
-        all_competitors = sorted(
-            all_competitors,
+        # Deduplicate competitors by name
+        seen = set()
+        unique_competitors = []
+        for c in all_competitors:
+            if c["name"] not in seen:
+                unique_competitors.append(c)
+                seen.add(c["name"])
+
+        # Sort and limit to 10
+        sorted_comps = sorted(
+            unique_competitors,
             key=lambda x: (x.get("rating", 0) or 0) * (x.get("review_count", 0) or 0),
             reverse=True
         )[:10]
 
-        st.subheader("Top 10 Competitor Analysis")
-        for comp in all_competitors:
-            st.markdown(f"### {comp['name']}")
-            st.markdown(f"_Location:_ {comp.get('vicinity', 'Manual Entry')}")
-            st.markdown(f"⭐ **Rating:** {comp.get('rating', 'N/A')} ({comp.get('review_count', '0')} reviews)")
-            if comp.get("website"):
-                website_text = get_website_text(comp['website'])
-                analysis = analyze_brand_with_gpt(comp['name'], comp.get('vicinity', ''), website_text)
-                st.markdown(analysis)
-            else:
-                st.markdown("_No website available for this competitor._")
+        tabs = st.tabs(["Patrons", "Competition"])
+
+        with tabs[0]:
+            with st.spinner("Generating persona profiles..."):
+                prompt = build_patron_prompt(zip_codes, user_notes, mode)
+                try:
+                    response = client.chat.completions.create(
+                        model="gpt-3.5-turbo",
+                        messages=[{"role": "user", "content": prompt}],
+                        temperature=0.8,
+                        max_tokens=1500
+                    )
+                    st.markdown(response.choices[0].message.content)
+                except Exception as e:
+                    st.error(f"Error generating persona profiles: {e}")
+
+        with tabs[1]:
+            st.subheader(f"Top {len(sorted_comps)} Competitor Analysis")
+            for comp in sorted_comps:
+                st.markdown(f"### {comp['name']}")
+                st.markdown(f"_Location:_ {comp.get('vicinity', 'Manual Entry')}")
+                st.markdown(f"⭐ **Rating:** {comp.get('rating', 'N/A')} ({comp.get('review_count', '0')} reviews)")
+                if comp.get("website"):
+                    website_text = get_website_text(comp['website'])
+                    analysis = analyze_brand_with_gpt(comp['name'], comp.get('vicinity', ''), website_text)
+                    st.markdown(analysis)
+                else:
+                    st.markdown("_No website available for this competitor._")
     else:
         st.warning("Please enter between 1 and 5 ZIP codes, separated by commas.")
