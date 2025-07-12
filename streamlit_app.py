@@ -59,15 +59,16 @@ if competitor_mode == "Manual Entry":
         for i in range(3):
             name = st.text_input(f"Competitor {i+1} Name", key=f"manual_name_{i}")
             website = st.text_input(f"Competitor {i+1} Website", key=f"manual_site_{i}")
-            multi_unit = st.radio(f"Is {name} Multi-Unit?", ["Yes", "No"], key=f"mu_{i}") if name else ""
             if name:
-                manual_competitors.append({
-                    "name": name,
-                    "website": website,
-                    "multi_unit": multi_unit
-                })
+                manual_competitors.append({"name": name, "website": website})
 
-# ---------- DATA FUNCTIONS ----------
+# ---------- SEARCH TERM BUILD ----------
+search_terms = []
+for style in selected_service_styles:
+    search_terms += service_style_map.get(style, [])
+search_terms += cuisine_styles
+
+# ---------- PROMPT BUILD ----------
 def build_patron_prompt(zip_codes, user_notes, mode):
     return f"""
     You are an expert in psychographics, anthropology, and brand strategy.
@@ -76,7 +77,7 @@ def build_patron_prompt(zip_codes, user_notes, mode):
     - User Notes: {user_notes}
 
     Generate 3–5 audience personas with the following:
-    1. Persona Name (must be a collective name like "Sun Chasers", not an individual name)
+    1. Persona Name (must be a collective name like \"Sun Chasers\", not an individual name)
     2. Summary of their lifestyle and cultural tendencies
     3. Archetypal opportunity (what they're psychologically drawn to; choose 1 of the 12 Jungian archetypes but renamed as: Citizen, Sage, Rebel, Lover, Creator, Explorer, Innocent, Magician, Hero, Jester, Caregiver, Sovereign)
     4. Motivators (emotional + behavioral drivers)
@@ -85,192 +86,33 @@ def build_patron_prompt(zip_codes, user_notes, mode):
     7. Estimated prevalence (% of total population they represent)
     """
 
-def get_website_text(url):
-    try:
-        response = requests.get(url, timeout=10)
-        soup = BeautifulSoup(response.text, 'html.parser')
-        return soup.get_text(separator=' ', strip=True)
-    except Exception as e:
-        return f"Error fetching website content: {e}"
-
-def analyze_brand_with_gpt(name, website_text, is_multi_unit):
-    prompt = f"""
-    You are a brand strategist.
-
-    Analyze the following restaurant brand based on their website content.
-
-    Restaurant Name: {name}
-    Multi-Unit: {is_multi_unit}
-
-    Website Content:
-    {website_text[:3000]}
-
-    Provide:
-    - Tone of Voice
-    - 3 Personality Traits
-    - Core Message or Brand Angle
-    - What they promote most (e.g., ingredients, culture, price, speed)
-    - Final Impression in 1 sentence
-    """
-    try:
-        response = client.chat.completions.create(
-            model="gpt-3.5-turbo",
-            messages=[{"role": "user", "content": prompt}],
-            temperature=0.7,
-            max_tokens=500
-        )
-        return response.choices[0].message.content
-    except Exception as e:
-        return f"Error analyzing brand: {e}"
-
-def get_lat_lon(zip_code):
-    url = f"https://maps.googleapis.com/maps/api/geocode/json?address={zip_code}&key={st.secrets['GOOGLE_API_KEY']}"
-    response = requests.get(url)
-    if response.status_code == 200:
-        results = response.json().get("results")
-        if results:
-            location = results[0]["geometry"]["location"]
-            return location["lat"], location["lng"]
-    return None, None
-
-def get_places_data(lat, lon, search_terms):
-    keyword = "+".join(search_terms)
-    nearby_url = (
-        f"https://maps.googleapis.com/maps/api/place/nearbysearch/json?"
-        f"location={lat},{lon}&radius=5000&type=restaurant&keyword={keyword}"
-        f"&key={st.secrets['GOOGLE_API_KEY']}"
-    )
-    response = requests.get(nearby_url)
-    results = response.json().get("results", [])
-    top_places = sorted(results, key=lambda x: x.get("user_ratings_total", 0), reverse=True)[:10]
-
-    processed = []
-    for place in top_places:
-        name = place.get("name")
-        rating = place.get("rating")
-        count = place.get("user_ratings_total")
-        place_id = place.get("place_id")
-        website = ""
-
-        detail_url = f"https://maps.googleapis.com/maps/api/place/details/json?place_id={place_id}&fields=website&key={st.secrets['GOOGLE_API_KEY']}"
-        detail_response = requests.get(detail_url)
-        if detail_response.status_code == 200:
-            website = detail_response.json().get("result", {}).get("website", "")
-
-        processed.append({
-            "name": name,
-            "rating": rating,
-            "review_count": count,
-            "website": website,
-            "multi_unit": "Unknown"
-        })
-    return processed
-
-if st.button("Run Matador Analysis"):
+# ---------- RESULT HANDLING ----------
+if st.button("Generate Report"):
     zip_codes = [z.strip() for z in zip_codes_input.split(",") if z.strip()]
-    if not (1 <= len(zip_codes) <= 5):
-        st.warning("Please enter between 1 and 5 ZIP codes.")
-    else:
-        with st.spinner("Gathering data and building profiles..."):
-            # --- Build prompt for GPT ---
-            patron_prompt = build_patron_prompt(zip_codes, user_notes, mode)
-
-            # --- Get patron personas from GPT ---
-            try:
-                patron_response = client.chat.completions.create(
-                    model="gpt-4",
-                    messages=[{"role": "user", "content": patron_prompt}],
-                    temperature=0.8,
-                    max_tokens=2000
-                )
-                patron_output = patron_response.choices[0].message.content
-            except Exception as e:
-                patron_output = f"Error generating Patron personas: {e}"
-
-            # --- Get competitor data ---
-            all_competitors = []
-            for zip_code in zip_codes:
-                lat, lon = get_lat_lon(zip_code)
-                if lat and lon and competitor_mode == "Auto via Google Places":
-                    comps = get_places_data(lat, lon, search_terms)
-                    all_competitors.extend(comps)
-
-            all_competitors.extend(manual_competitors)
-
-            # Deduplicate
-            unique = []
-            seen_names = set()
-            for comp in all_competitors:
-                if comp["name"] not in seen_names:
-                    seen_names.add(comp["name"])
-                    unique.append(comp)
-
-            top_comps = sorted(
-                unique,
-                key=lambda x: (x.get("rating", 0) or 0) * (x.get("review_count", 0) or 0),
-                reverse=True
-            )[:10]
-
-            # Analyze competition
-            analyzed_comps = []
-            for comp in top_comps:
-                site = comp.get("website", "")
-                site_text = get_website_text(site) if site else ""
-                gpt_output = analyze_brand_with_gpt(comp["name"], comp.get("vicinity", ""), site_text) if site_text else "No website found"
-                analyzed_comps.append({
-                    "name": comp["name"],
-                    "url": site or "N/A",
-                    "vicinity": comp.get("vicinity", "N/A"),
-                    "rating": comp.get("rating", "N/A"),
-                    "reviews": comp.get("review_count", "N/A"),
-                    "analysis": gpt_output,
-                    "type": "Manual" if comp in manual_competitors else "Auto-detected"
-                })
-
-            # --- Whitespace Analysis Prompt ---
-            whitespace_prompt = f"""
-            Based on the following competitor brand descriptions, extract 3 whitespace opportunities for a new restaurant brand.
-
-            For each, provide:
-            1. 3 Personality traits that are underrepresented across the competitive set
-            2. A short writeup on the brand tone/direction
-            3. Which Patron personas (from earlier) are most likely to be attracted to each
-
-            Competitor Brand Descriptions:
-            {'; '.join([c['analysis'] for c in analyzed_comps if c['analysis'] != 'No website found'])}
-            """
-
-            try:
-                whitespace_response = client.chat.completions.create(
-                    model="gpt-4",
-                    messages=[
-                        {"role": "user", "content": patron_output},
-                        {"role": "user", "content": whitespace_prompt}
-                    ],
-                    temperature=0.7,
-                    max_tokens=1500
-                )
-                whitespace_output = whitespace_response.choices[0].message.content
-            except Exception as e:
-                whitespace_output = f"Error generating whitespace analysis: {e}"
-
-        # --- OUTPUT TABS ---
-        tabs = st.tabs(["🎯 Patrons", "🍽 Competition", "🔍 Whitespace"])
+    if 1 <= len(zip_codes) <= 5:
+        tabs = st.tabs(["Patrons", "Competition", "White Space"])
 
         with tabs[0]:
-            st.subheader("Primary Patron Personas")
-            st.markdown(patron_output)
+            with st.spinner("Generating audience personas..."):
+                try:
+                    prompt = build_patron_prompt(zip_codes, user_notes, mode)
+                    response = client.chat.completions.create(
+                        model="gpt-4",
+                        messages=[{"role": "user", "content": prompt}],
+                        temperature=0.75,
+                        max_tokens=1600
+                    )
+                    result = response.choices[0].message.content
+                    personas = result.split("\n\n")
+                    for p in personas:
+                        st.markdown(p)
+                except Exception as e:
+                    st.error(f"Error generating personas: {e}")
 
         with tabs[1]:
-            st.subheader(f"Top {len(analyzed_comps)} Competitors")
-            for comp in analyzed_comps:
-                st.markdown(f"### {comp['name']}")
-                st.markdown(f"**URL:** {comp['url']}")
-                st.markdown(f"**Location:** {comp['vicinity']}")
-                st.markdown(f"**Rating:** {comp['rating']} ⭐ ({comp['reviews']} reviews)")
-                st.markdown(f"**Source:** {comp['type']}")
-                st.markdown(comp["analysis"])
+            st.markdown("_Competition analysis will appear here once integrated._")
 
         with tabs[2]:
-            st.subheader("Brand Whitespace Opportunities")
-            st.markdown(whitespace_output)
+            st.markdown("_White space insights will be generated based on persona gaps and competition._")
+    else:
+        st.warning("Please enter between 1 and 5 ZIP codes.")
