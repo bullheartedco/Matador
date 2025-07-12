@@ -165,3 +165,112 @@ def get_places_data(lat, lon, search_terms):
             "multi_unit": "Unknown"
         })
     return processed
+
+if st.button("Run Matador Analysis"):
+    zip_codes = [z.strip() for z in zip_codes_input.split(",") if z.strip()]
+    if not (1 <= len(zip_codes) <= 5):
+        st.warning("Please enter between 1 and 5 ZIP codes.")
+    else:
+        with st.spinner("Gathering data and building profiles..."):
+            # --- Build prompt for GPT ---
+            patron_prompt = build_patron_prompt(zip_codes, user_notes, mode)
+
+            # --- Get patron personas from GPT ---
+            try:
+                patron_response = client.chat.completions.create(
+                    model="gpt-4",
+                    messages=[{"role": "user", "content": patron_prompt}],
+                    temperature=0.8,
+                    max_tokens=2000
+                )
+                patron_output = patron_response.choices[0].message.content
+            except Exception as e:
+                patron_output = f"Error generating Patron personas: {e}"
+
+            # --- Get competitor data ---
+            all_competitors = []
+            for zip_code in zip_codes:
+                lat, lon = get_lat_lon(zip_code)
+                if lat and lon and competitor_mode == "Auto via Google Places":
+                    comps = get_places_data(lat, lon, search_terms)
+                    all_competitors.extend(comps)
+
+            all_competitors.extend(manual_competitors)
+
+            # Deduplicate
+            unique = []
+            seen_names = set()
+            for comp in all_competitors:
+                if comp["name"] not in seen_names:
+                    seen_names.add(comp["name"])
+                    unique.append(comp)
+
+            top_comps = sorted(
+                unique,
+                key=lambda x: (x.get("rating", 0) or 0) * (x.get("review_count", 0) or 0),
+                reverse=True
+            )[:10]
+
+            # Analyze competition
+            analyzed_comps = []
+            for comp in top_comps:
+                site = comp.get("website", "")
+                site_text = get_website_text(site) if site else ""
+                gpt_output = analyze_brand_with_gpt(comp["name"], comp.get("vicinity", ""), site_text) if site_text else "No website found"
+                analyzed_comps.append({
+                    "name": comp["name"],
+                    "url": site or "N/A",
+                    "vicinity": comp.get("vicinity", "N/A"),
+                    "rating": comp.get("rating", "N/A"),
+                    "reviews": comp.get("review_count", "N/A"),
+                    "analysis": gpt_output,
+                    "type": "Manual" if comp in manual_competitors else "Auto-detected"
+                })
+
+            # --- Whitespace Analysis Prompt ---
+            whitespace_prompt = f"""
+            Based on the following competitor brand descriptions, extract 3 whitespace opportunities for a new restaurant brand.
+
+            For each, provide:
+            1. 3 Personality traits that are underrepresented across the competitive set
+            2. A short writeup on the brand tone/direction
+            3. Which Patron personas (from earlier) are most likely to be attracted to each
+
+            Competitor Brand Descriptions:
+            {'; '.join([c['analysis'] for c in analyzed_comps if c['analysis'] != 'No website found'])}
+            """
+
+            try:
+                whitespace_response = client.chat.completions.create(
+                    model="gpt-4",
+                    messages=[
+                        {"role": "user", "content": patron_output},
+                        {"role": "user", "content": whitespace_prompt}
+                    ],
+                    temperature=0.7,
+                    max_tokens=1500
+                )
+                whitespace_output = whitespace_response.choices[0].message.content
+            except Exception as e:
+                whitespace_output = f"Error generating whitespace analysis: {e}"
+
+        # --- OUTPUT TABS ---
+        tabs = st.tabs(["🎯 Patrons", "🍽 Competition", "🔍 Whitespace"])
+
+        with tabs[0]:
+            st.subheader("Primary Patron Personas")
+            st.markdown(patron_output)
+
+        with tabs[1]:
+            st.subheader(f"Top {len(analyzed_comps)} Competitors")
+            for comp in analyzed_comps:
+                st.markdown(f"### {comp['name']}")
+                st.markdown(f"**URL:** {comp['url']}")
+                st.markdown(f"**Location:** {comp['vicinity']}")
+                st.markdown(f"**Rating:** {comp['rating']} ⭐ ({comp['reviews']} reviews)")
+                st.markdown(f"**Source:** {comp['type']}")
+                st.markdown(comp["analysis"])
+
+        with tabs[2]:
+            st.subheader("Brand Whitespace Opportunities")
+            st.markdown(whitespace_output)
