@@ -71,13 +71,16 @@ def build_prompt(zip_code, structured_data):
     return f"""
 You are an expert in psychographics, anthropology, and brand strategy.
 
-Based on the following data for ZIP code {zip_code}, generate:
-1. A primary audience persona (name and description)
-2. A personality archetype (Citizen, Sage, Rebel, Lover, Hero, Explorer, Creator, Jester, Caregiver, Innocent, Sovereign, Magician)
-3. Top 3-5 behavioral motivators
-4. 2–3 influenced secondary groups
-5. A local brand opportunity insight
+Based on the following data for ZIP code {zip_code}, generate a local audience persona and insight summary. The output must reflect behavioral depth, emotional motivators, and social influence.
 
+1. Give the audience a **collective name** that reflects their behavior, lifestyle, or cultural energy (e.g., “Sun Chasers,” “Concrete Seekers,” “Quiet Hustlers”). This should be catchy, memorable, and metaphorically relevant — not a human first name.
+2. Write a vivid **lifestyle description** for the group, including habits, occupations, priorities, values, and emotional drivers.
+3. Assign a **personality archetype** that best reflects the group’s core identity (choose from: Citizen, Sage, Rebel, Lover, Hero, Explorer, Creator, Jester, Caregiver, Innocent, Sovereign, Magician).
+4. List 3–5 key **motivators or belief systems** that guide their behavior.
+5. Describe 2–3 **secondary audience groups** that are shaped or influenced by the primary group.
+6. Offer a concise, strategic **brand opportunity insight** — how a brand could meaningfully connect with or serve this audience.
+
+Use sensory language, cultural signals, and behavioral specifics to make the group feel real.
 Data:
 {structured_data}
 """
