@@ -195,7 +195,7 @@ if st.button("Generate Analysis"):
             reverse=True
         )[:10]
 
-        tabs = st.tabs(["Patrons", "Competition"])
+        tabs = st.tabs(["Patrons", "Competition", "Whitespace"])
 
         with tabs[0]:
             with st.spinner("Generating persona profiles..."):
@@ -227,5 +227,11 @@ if st.button("Generate Analysis"):
                     st.markdown(analysis)
                 else:
                     st.markdown("_No website available for this competitor._")
+
+        with tabs[2]:
+            st.subheader("Personality Whitespace Opportunities")
+            st.markdown(
+                "We’ll analyze gaps in brand personality traits among the top competitors and recommend 3 distinct traits that aren’t dominant, along with the Patron groups most likely to be attracted to each. Coming soon."
+            )
     else:
         st.warning("Please enter between 1 and 5 ZIP codes, separated by commas.")
