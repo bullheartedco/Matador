@@ -206,7 +206,7 @@ if st.button("Generate Analysis"):
             reverse=True
         )[:10]
 
-        tabs = st.tabs(["Patrons", "Competition"])
+        tabs = st.tabs(["Patrons", "Competition", "White Space"])
 
         with tabs[0]:
             with st.spinner("Generating persona profiles..."):
@@ -216,9 +216,12 @@ if st.button("Generate Analysis"):
                         model="gpt-3.5-turbo",
                         messages=[{"role": "user", "content": prompt}],
                         temperature=0.8,
-                        max_tokens=1500
+                        max_tokens=2000
                     )
-                    st.markdown(response.choices[0].message.content)
+                    output = response.choices[0].message.content
+
+                    st.markdown(output)
+
                 except Exception as e:
                     st.error(f"Error generating persona profiles: {e}")
 
@@ -234,5 +237,26 @@ if st.button("Generate Analysis"):
                     st.markdown(analysis)
                 else:
                     st.markdown("_No website available for this competitor._")
+
+        with tabs[2]:
+            st.subheader("Opportunity: Brand White Space")
+            st.info("Analyzing patron data and competitor traits to reveal unique opportunities…")
+            try:
+                whitespace_prompt = """
+                Based on the competitive restaurant landscape and the local audience personas previously generated, analyze and identify 3 potential personality trait combinations for a new restaurant brand that would stand out in the market.
+                For each trait combination:
+                - Describe the opportunity in 1–2 sentences
+                - Link to the patron groups from earlier who would be most likely attracted to that brand expression
+                - Avoid repeating personality traits already used by the competitors
+                """
+                response = client.chat.completions.create(
+                    model="gpt-3.5-turbo",
+                    messages=[{"role": "user", "content": whitespace_prompt}],
+                    temperature=0.75,
+                    max_tokens=1000
+                )
+                st.markdown(response.choices[0].message.content)
+            except Exception as e:
+                st.error(f"Error generating white space analysis: {e}")
     else:
         st.warning("Please enter between 1 and 5 ZIP codes, separated by commas.")
