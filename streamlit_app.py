@@ -5,7 +5,7 @@ import json
 from bs4 import BeautifulSoup
 
 # ---------- CONFIG ----------
-st.set_page_config(page_title="Matador: Local Audience Profiler", layout="centered")
+st.set_page_config(page_title="Matador: Local Audience Profiler", layout="wide")
 
 # ---------- OPENAI CLIENT ----------
 client = OpenAI(api_key=st.secrets["OPENAI_API_KEY"])
@@ -33,6 +33,17 @@ cuisine_styles = st.multiselect(
         "Barbecue", "Vegan", "Vegetarian", "Burgers", "Pizza", "Coffee", "Bakery"
     ]
 )
+
+competitor_mode = st.radio("Choose how to analyze competitors:", ["Auto via Google Places", "Manual Entry"])
+manual_competitors = []
+
+if competitor_mode == "Manual Entry":
+    with st.expander("Add Manual Competitor Info"):
+        for i in range(3):
+            name = st.text_input(f"Competitor {i+1} Name", key=f"manual_name_{i}")
+            website = st.text_input(f"Competitor {i+1} Website", key=f"manual_site_{i}")
+            if name:
+                manual_competitors.append({"name": name, "website": website})
 
 # ---------- DATA FUNCTIONS ----------
 def get_census_data(zip_code):
@@ -211,6 +222,15 @@ Identify three personality traits that represent opportunity whitespace. For eac
 - Keep it concise and strategic
 """
 
+def render_persona_cards(text_block):
+    personas = text_block.split("(~")
+    for p in personas[1:]:
+        lines = p.split("\n")
+        header = lines[0].replace(")", ")**:")
+        with st.container():
+            st.markdown(f"### 🌐 {header}")
+            st.markdown("\n".join(lines[1:]))
+
 # ---------- RUN ----------
 if st.button("Generate Analysis"):
     zip_codes = [z.strip() for z in zip_codes_input.split(",") if z.strip()]
@@ -223,7 +243,7 @@ if st.button("Generate Analysis"):
             with st.spinner(f"Collecting data for {zip_code}..."):
                 census_data = get_census_data(zip_code)
                 lat, lon = get_lat_lon(zip_code)
-                poi_types = get_places_data(lat, lon, cuisine_styles) if lat and lon else []
+                poi_types = get_places_data(lat, lon, cuisine_styles) if lat and lon and competitor_mode == "Auto via Google Places" else []
 
                 if census_data:
                     structured = format_structured_data(census_data, [p['name'] for p in poi_types])
@@ -232,6 +252,8 @@ if st.button("Generate Analysis"):
                     competitor_list.extend(poi_types)
                 else:
                     st.error(f"Failed to retrieve Census data for {zip_code}.")
+
+        competitor_list.extend(manual_competitors)
 
         if combined_data:
             tab1, tab2 = st.tabs(["🧬 Patrons", "🍊 Competition"])
@@ -248,21 +270,24 @@ if st.button("Generate Analysis"):
                         )
                         patrons_output = response.choices[0].message.content
                         st.markdown(patrons_output)
+                        st.markdown("---")
+                        st.subheader("📉 Visual Persona Cards")
+                        render_persona_cards(patrons_output)
                     except Exception as e:
                         st.error(f"OpenAI error: {e}")
 
             with tab2:
-                st.markdown("### Top 10 Competitor Restaurants")
+                st.markdown("### Top Competitor Restaurants")
                 competitors_summary = ""
                 for r in competitor_list:
-                    competitors_summary += f"- {r['name']} at {r['vicinity']}\n"
-                    st.markdown(f"**{r['name']}** — {r['vicinity']}")
+                    competitors_summary += f"- {r['name']} at {r.get('vicinity', '')}\n"
+                    st.markdown(f"**{r['name']}** — {r.get('vicinity', 'Manual Entry')}")
                     st.markdown(f"""
 - **Google Rating:** ⭐ {r.get("rating", "N/A")} ({r.get("review_count", "0")} reviews)
 """)
                     if r.get("website"):
                         website_text = get_website_text(r['website'])
-                        brand_analysis = analyze_brand_with_gpt(r['name'], r['vicinity'], website_text)
+                        brand_analysis = analyze_brand_with_gpt(r['name'], r.get('vicinity', ''), website_text)
                         st.markdown(brand_analysis)
                     else:
                         st.markdown("_No website provided for analysis._")
