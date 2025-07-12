@@ -85,3 +85,8 @@ search_terms = []
 for style in selected_service_styles:
     search_terms += service_style_map.get(style, [])
 search_terms += cuisine_styles
+
+# ---------- QUERY BUTTON ----------
+if st.button("Run Matador Analysis"):
+    st.success("Query initiated.")
+    # Your logic to trigger the processing and display outputs here.
