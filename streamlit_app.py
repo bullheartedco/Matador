@@ -11,10 +11,10 @@ client = OpenAI(api_key=st.secrets["OPENAI_API_KEY"])
 # ---------- APP HEADER ----------
 st.title("🥊 Matador")
 st.subheader("Command the Crowd.")
-st.write("Enter a ZIP code to generate the top 5 local audience personas with estimated prevalence and psychographic insight.")
+st.write("Enter up to 5 US ZIP codes to generate local audience personas with estimated prevalence and psychographic insight.")
 
 # ---------- INPUT ----------
-zip_code = st.text_input("Enter a US ZIP Code", max_chars=10)
+zip_codes_input = st.text_input("Enter up to 5 ZIP Codes, separated by commas")
 user_notes = st.text_area("Add any known local insights, cultural notes, or behaviors (optional)")
 
 # ---------- DATA FUNCTIONS ----------
@@ -90,32 +90,35 @@ Data:
 
 # ---------- RUN ----------
 if st.button("Generate Audience Profiles"):
-    if zip_code:
-        with st.spinner("Gathering data and building personas..."):
-            census_data = get_census_data(zip_code)
-            if census_data:
-                structured_data = format_structured_data(census_data)
-                prompt = build_prompt(zip_code, structured_data)
+    zip_codes = [z.strip() for z in zip_codes_input.split(",") if z.strip()]
 
-                try:
-                    response = client.chat.completions.create(
-                        model="gpt-3.5-turbo",
-                        messages=[
-                            {"role": "system", "content": "You are a helpful assistant that generates multiple local psychographic personas for brand strategists."},
-                            {"role": "user", "content": prompt}
-                        ],
-                        temperature=0.85,
-                        max_tokens=1800
-                    )
+    if 1 <= len(zip_codes) <= 5:
+        for zip_code in zip_codes:
+            with st.spinner(f"Gathering data and building personas for {zip_code}..."):
+                census_data = get_census_data(zip_code)
+                if census_data:
+                    structured_data = format_structured_data(census_data)
+                    prompt = build_prompt(zip_code, structured_data)
 
-                    output = response.choices[0].message.content
-                    st.success("Top 5 Personas Generated")
-                    st.markdown(output)
+                    try:
+                        response = client.chat.completions.create(
+                            model="gpt-3.5-turbo",
+                            messages=[
+                                {"role": "system", "content": "You are a helpful assistant that generates multiple local psychographic personas for brand strategists."},
+                                {"role": "user", "content": prompt}
+                            ],
+                            temperature=0.85,
+                            max_tokens=1800
+                        )
 
-                except Exception as e:
-                    st.error(f"OpenAI error: {e}")
+                        output = response.choices[0].message.content
+                        st.success(f"Top 5 Personas Generated for {zip_code}")
+                        st.markdown(output)
 
-            else:
-                st.error("Failed to retrieve Census data. Try a different ZIP code.")
+                    except Exception as e:
+                        st.error(f"OpenAI error for {zip_code}: {e}")
+
+                else:
+                    st.error(f"Failed to retrieve Census data for {zip_code}. Try a different ZIP code.")
     else:
-        st.warning("Please enter a ZIP code.")
+        st.warning("Please enter between 1 and 5 ZIP codes, separated by commas.")
