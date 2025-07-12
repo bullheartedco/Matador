@@ -11,7 +11,7 @@ client = OpenAI(api_key=st.secrets["OPENAI_API_KEY"])
 # ---------- APP HEADER ----------
 st.title("🥊 Matador")
 st.subheader("Command the Crowd.")
-st.write("Enter a ZIP code to generate a local audience profile using U.S. Census data and AI-powered psychographic insights.")
+st.write("Enter a ZIP code to generate the top 5 local audience personas with estimated prevalence and psychographic insight.")
 
 # ---------- INPUT ----------
 zip_code = st.text_input("Enter a US ZIP Code", max_chars=10)
@@ -69,26 +69,28 @@ def format_structured_data(census):
 
 def build_prompt(zip_code, structured_data):
     return f"""
-You are an expert in psychographics, anthropology, and brand strategy.
+You are a strategic anthropologist and behavioral branding expert.
 
-Based on the following data for ZIP code {zip_code}, generate a local audience persona and insight summary. Do not default to cultural diversity, sustainability, or localism unless the structured data explicitly calls for it. Avoid vague or overused phrases.
+Based on the following data for ZIP code {zip_code}, identify the top 5 distinct audience personas that exist in the area. Each persona must:
 
-1. Give the audience a **collective name** (e.g., “Concrete Seekers,” “Quiet Hustlers”) that reflects their behaviors, lifestyle, or energy.
-2. Write a vivid **lifestyle description** based on the data, including where they go, how they live, what they aspire to, and what they avoid.
-3. Assign a **personality archetype** that best represents the group.
-4. List 3–5 **motivators, fears, or belief systems** that shape their choices.
-5. Describe 2–3 **secondary groups** this segment influences.
-6. Provide a **brand opportunity insight** that reflects what a bold brand could offer this audience.
+- Have a collective, behaviorally inspired name (e.g., "Sun Chasers", "Concrete Seekers")
+- Include a short lifestyle summary (values, habits, motivations, daily behaviors)
+- Assign an archetype (choose from: Citizen, Sage, Rebel, Lover, Hero, Explorer, Creator, Jester, Caregiver, Innocent, Sovereign, Magician)
+- Include 3–5 behavioral or emotional motivators
+- Include a brief description of 2–3 secondary audience groups they influence
+- Estimate a prevalence score (e.g., ~22% of local population)
+- Include one sentence of strategic brand opportunity insight
 
-Use realism, attitude, contrast, and specificity in your output.
+Avoid vague generalizations. Avoid repeating tropes like "they value cultural diversity" unless clearly indicated. Be creative, specific, and behaviorally rich.
+
 Data:
 {structured_data}
 """
 
 # ---------- RUN ----------
-if st.button("Generate Audience Profile"):
+if st.button("Generate Audience Profiles"):
     if zip_code:
-        with st.spinner("Gathering data and building persona..."):
+        with st.spinner("Gathering data and building personas..."):
             census_data = get_census_data(zip_code)
             if census_data:
                 structured_data = format_structured_data(census_data)
@@ -98,15 +100,15 @@ if st.button("Generate Audience Profile"):
                     response = client.chat.completions.create(
                         model="gpt-3.5-turbo",
                         messages=[
-                            {"role": "system", "content": "You are a helpful assistant that generates local psychographic personas for brand strategists."},
+                            {"role": "system", "content": "You are a helpful assistant that generates multiple local psychographic personas for brand strategists."},
                             {"role": "user", "content": prompt}
                         ],
-                        temperature=0.8,
-                        max_tokens=900
+                        temperature=0.85,
+                        max_tokens=1800
                     )
 
                     output = response.choices[0].message.content
-                    st.success("Profile Generated")
+                    st.success("Top 5 Personas Generated")
                     st.markdown(output)
 
                 except Exception as e:
