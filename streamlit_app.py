@@ -2,6 +2,7 @@ import streamlit as st
 import requests
 from openai import OpenAI
 import time
+import json
 
 # ---------- CONFIG ----------
 st.set_page_config(page_title="Matador: Local Audience Profiler", layout="centered")
@@ -12,7 +13,7 @@ client = OpenAI(api_key=st.secrets["OPENAI_API_KEY"])
 # ---------- APP HEADER ----------
 st.title("🥊 Matador")
 st.subheader("Command the Crowd.")
-st.write("Enter up to 5 US ZIP codes to generate local audience personas with estimated prevalence and psychographic insight.")
+st.write("Enter up to 5 US ZIP codes to generate cumulative local audience personas with estimated prevalence and psychographic insight.")
 
 # ---------- INPUT ----------
 zip_codes_input = st.text_input("Enter up to 5 ZIP Codes, separated by commas")
@@ -83,11 +84,11 @@ def format_structured_data(census, poi_types):
     except:
         return None
 
-def build_prompt(zip_code, structured_data):
+def build_prompt(zip_codes, combined_data):
     return f"""
 You are a strategic anthropologist and behavioral branding expert.
 
-Based on the following data for ZIP code {zip_code}, identify the top 5 distinct audience personas that exist in the area. Each persona must:
+Based on the following cumulative data for ZIP codes {', '.join(zip_codes)}, identify the top 5 most representative audience personas across the region. Each persona must:
 
 - Have a collective, behaviorally inspired name (e.g., "Sun Chasers", "Concrete Seekers")
 - Include a short lifestyle summary (values, habits, motivations, daily behaviors)
@@ -95,13 +96,13 @@ Based on the following data for ZIP code {zip_code}, identify the top 5 distinct
 - Include 3 projected personality traits for the group (e.g., curious, intentional, bold)
 - Include 3–5 behavioral or emotional motivators
 - Include a brief description of 2–3 secondary audience groups they influence
-- Estimate a prevalence score (e.g., ~22% of local population)
+- Estimate a prevalence score (e.g., ~22% of total ZIP region population)
 - Include one sentence of strategic brand opportunity insight
 
-Avoid vague generalizations. Avoid repeating tropes like "they value cultural diversity" unless clearly indicated. Be creative, specific, and behaviorally rich.
+Be specific and behaviorally rich. Avoid vague generalizations.
 
-Data:
-{structured_data}
+Cumulative Data:
+{json.dumps(combined_data, indent=2)}
 """
 
 # ---------- RUN ----------
@@ -109,36 +110,40 @@ if st.button("Generate Audience Profiles"):
     zip_codes = [z.strip() for z in zip_codes_input.split(",") if z.strip()]
 
     if 1 <= len(zip_codes) <= 5:
+        total_population = 0
+        combined_data = []
+
         for zip_code in zip_codes:
-            with st.spinner(f"Gathering data and building personas for {zip_code}..."):
+            with st.spinner(f"Collecting data for {zip_code}..."):
                 census_data = get_census_data(zip_code)
                 lat, lon = get_lat_lon(zip_code)
-                if lat and lon:
-                    poi_types = get_places_data(lat, lon)
-                else:
-                    poi_types = []
+                poi_types = get_places_data(lat, lon) if lat and lon else []
 
                 if census_data:
-                    structured_data = format_structured_data(census_data, poi_types)
-                    prompt = build_prompt(zip_code, structured_data)
-
-                    try:
-                        response = client.chat.completions.create(
-                            model="gpt-3.5-turbo",
-                            messages=[
-                                {"role": "system", "content": "You are a helpful assistant that generates multiple local psychographic personas for brand strategists."},
-                                {"role": "user", "content": prompt}
-                            ],
-                            temperature=0.85,
-                            max_tokens=1800
-                        )
-
-                        output = response.choices[0].message.content
-                        st.success(f"Top 5 Personas Generated for {zip_code}")
-                        st.markdown(output)
-
-                    except Exception as e:
-                        st.error(f"OpenAI error for {zip_code}: {e}")
-
+                    total_population += int(census_data.get("B01001_001E", 0))
+                    structured = format_structured_data(census_data, poi_types)
+                    structured["ZIP Code"] = zip_code
+                    combined_data.append(structured)
                 else:
-                    st.error(f"Failed to retrieve Census data for {zip_code}. Try a
+                    st.error(f"Failed to retrieve Census data for {zip_code}.")
+
+        if combined_data:
+            with st.spinner("Generating cumulative personas..."):
+                prompt = build_prompt(zip_codes, combined_data)
+                try:
+                    response = client.chat.completions.create(
+                        model="gpt-3.5-turbo",
+                        messages=[
+                            {"role": "system", "content": "You are a helpful assistant that generates multiple local psychographic personas for brand strategists."},
+                            {"role": "user", "content": prompt}
+                        ],
+                        temperature=0.85,
+                        max_tokens=1800
+                    )
+                    output = response.choices[0].message.content
+                    st.success("Top 5 Representative Personas Generated")
+                    st.markdown(output)
+                except Exception as e:
+                    st.error(f"OpenAI error: {e}")
+    else:
+        st.warning("Please enter between 1 and 5 ZIP codes, separated by commas.")
