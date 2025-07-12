@@ -1,6 +1,7 @@
 import streamlit as st
 import requests
 from openai import OpenAI
+import time
 
 # ---------- CONFIG ----------
 st.set_page_config(page_title="Matador: Local Audience Profiler", layout="centered")
@@ -35,7 +36,30 @@ def get_census_data(zip_code):
             return dict(zip(labels, values))
     return None
 
-def format_structured_data(census):
+def get_lat_lon(zip_code):
+    url = f"https://maps.googleapis.com/maps/api/geocode/json?address={zip_code}&key={st.secrets['GOOGLE_API_KEY']}"
+    response = requests.get(url)
+    if response.status_code == 200:
+        results = response.json().get("results")
+        if results:
+            location = results[0]["geometry"]["location"]
+            return location["lat"], location["lng"]
+    return None, None
+
+def get_places_data(lat, lon):
+    types = []
+    url = f"https://maps.googleapis.com/maps/api/place/nearbysearch/json?location={lat},{lon}&radius=5000&type=point_of_interest&key={st.secrets['GOOGLE_API_KEY']}"
+    response = requests.get(url)
+    if response.status_code == 200:
+        data = response.json()
+        for result in data.get("results", []):
+            for t in result.get("types", []):
+                types.append(t)
+        unique_types = list(set(types))
+        return unique_types[:10]  # Limit for prompt clarity
+    return []
+
+def format_structured_data(census, poi_types):
     try:
         total_pop = int(census.get("B01001_001E", 0))
         median_income = int(census.get("B19013_001E", 0))
@@ -53,15 +77,7 @@ def format_structured_data(census):
                     "Asian": round(asian / total_pop * 100, 1)
                 }
             },
-            "Behavior Patterns": [
-                "Frequent visits to parks, cafes, and community events",
-                "Likely use of public transportation or rideshares",
-                "Interest in local businesses and arts scenes"
-            ],
-            "Values & Interests": [
-                "Cultural diversity", "Community belonging", "Support for local makers",
-                "Affordable lifestyle with social engagement"
-            ],
+            "Nearby Place Types": poi_types,
             "User Notes": user_notes
         }
     except:
@@ -96,8 +112,14 @@ if st.button("Generate Audience Profiles"):
         for zip_code in zip_codes:
             with st.spinner(f"Gathering data and building personas for {zip_code}..."):
                 census_data = get_census_data(zip_code)
+                lat, lon = get_lat_lon(zip_code)
+                if lat and lon:
+                    poi_types = get_places_data(lat, lon)
+                else:
+                    poi_types = []
+
                 if census_data:
-                    structured_data = format_structured_data(census_data)
+                    structured_data = format_structured_data(census_data, poi_types)
                     prompt = build_prompt(zip_code, structured_data)
 
                     try:
@@ -119,6 +141,4 @@ if st.button("Generate Audience Profiles"):
                         st.error(f"OpenAI error for {zip_code}: {e}")
 
                 else:
-                    st.error(f"Failed to retrieve Census data for {zip_code}. Try a different ZIP code.")
-    else:
-        st.warning("Please enter between 1 and 5 ZIP codes, separated by commas.")
+                    st.error(f"Failed to retrieve Census data for {zip_code}. Try a
