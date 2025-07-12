@@ -23,14 +23,21 @@ user_notes = st.text_area("Add any known local insights, cultural notes, or beha
 
 # ---------- API HELPERS ----------
 def get_census_data(zip_code):
-    url = f"https://api.census.gov/data/2020/dec/pl?get=NAME,P1_001N,P2_005N,P2_006N,P2_007N&for=zip%20code%20tabulation%20area:{zip_code}"
-    response = requests.get(url)
+    # Using the ACS 5-Year Data for 2021 which supports ZIP Code Tabulation Areas
+    url = "https://api.census.gov/data/2021/acs/acs5"
+    params = {
+        "get": "NAME,B01001_001E,B19013_001E,B02001_002E,B02001_003E,B02001_005E",
+        "for": f"zip code tabulation area:{zip_code}",
+        "key": st.secrets["CENSUS_API_KEY"]  # Add your key to Streamlit Secrets
+    }
     
-    # 👇 Add this to show response status and data
-    st.write("Census API URL:", url)
+    response = requests.get(url, params=params)
+
+    # Debug print
+    st.write("Census API URL:", response.url)
     st.write("Status Code:", response.status_code)
     st.write("Raw Response:", response.text)
-    
+
     if response.status_code == 200:
         data = response.json()
         if len(data) > 1:
