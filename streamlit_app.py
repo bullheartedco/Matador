@@ -63,20 +63,50 @@ def get_lat_lon(zip_code):
 
 def get_places_data(lat, lon, cuisine_styles):
     keyword = "+".join(cuisine_styles)
-    url = f"https://maps.googleapis.com/maps/api/place/nearbysearch/json?location={lat},{lon}&radius=5000&type=restaurant&keyword={keyword}&key={st.secrets['GOOGLE_API_KEY']}"
-    response = requests.get(url)
-    places = []
-    if response.status_code == 200:
-        data = response.json()
+    nearby_url = (
+        f"https://maps.googleapis.com/maps/api/place/nearbysearch/json?"
+        f"location={lat},{lon}&radius=5000&type=restaurant&keyword={keyword}"
+        f"&key={st.secrets['GOOGLE_API_KEY']}"
+    )
+    nearby_response = requests.get(nearby_url)
+    raw_places = []
+
+    if nearby_response.status_code == 200:
+        data = nearby_response.json()
         for result in data.get("results", []):
-            places.append({
+            rating = result.get("rating", 0)
+            review_count = result.get("user_ratings_total", 0)
+            score = rating * review_count
+            raw_places.append({
                 "name": result.get("name"),
                 "vicinity": result.get("vicinity"),
-                "rating": result.get("rating"),
-                "review_count": result.get("user_ratings_total"),
-                "website": result.get("website", "")
+                "rating": rating,
+                "review_count": review_count,
+                "place_id": result.get("place_id"),
+                "score": score
             })
-    return places[:10]
+
+    top_places = sorted(raw_places, key=lambda x: x["score"], reverse=True)[:10]
+    places = []
+    for place in top_places:
+        details_url = (
+            f"https://maps.googleapis.com/maps/api/place/details/json?"
+            f"place_id={place['place_id']}&fields=website&key={st.secrets['GOOGLE_API_KEY']}"
+        )
+        details_response = requests.get(details_url)
+        website = ""
+        if details_response.status_code == 200:
+            website = details_response.json().get("result", {}).get("website", "")
+
+        places.append({
+            "name": place["name"],
+            "vicinity": place["vicinity"],
+            "rating": place["rating"],
+            "review_count": place["review_count"],
+            "website": website
+        })
+
+    return places
 
 def get_website_text(url):
     try:
@@ -98,7 +128,7 @@ def analyze_brand_with_gpt(name, address, website_text):
 
     Restaurant Name: {name}
     Location: {address}
-    Website Text: {website_text[:3000]}  # limit to avoid token overflow
+    Website Text: {website_text[:3000]}
     """
     try:
         response = client.chat.completions.create(
@@ -222,7 +252,7 @@ if st.button("Generate Analysis"):
                         st.error(f"OpenAI error: {e}")
 
             with tab2:
-                st.markdown("### Selected Competitor Restaurants")
+                st.markdown("### Top 10 Competitor Restaurants")
                 competitors_summary = ""
                 for r in competitor_list:
                     competitors_summary += f"- {r['name']} at {r['vicinity']}\n"
