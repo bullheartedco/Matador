@@ -1,3 +1,4 @@
+# Matador: Streamlit App for Local Patron & Competitor Analysis
 import streamlit as st
 import requests
 from openai import OpenAI
@@ -72,8 +73,8 @@ def get_lat_lon(zip_code):
             return location["lat"], location["lng"]
     return None, None
 
-def get_places_data(lat, lon, cuisine_styles):
-    keyword = "+".join(cuisine_styles)
+def get_places_data(lat, lon, search_terms):
+    keyword = "+".join(search_terms)
     nearby_url = (
         f"https://maps.googleapis.com/maps/api/place/nearbysearch/json?"
         f"location={lat},{lon}&radius=5000&type=restaurant&keyword={keyword}"
@@ -152,158 +153,43 @@ def analyze_brand_with_gpt(name, address, website_text):
     except Exception as e:
         return f"Error analyzing brand: {e}"
 
-def format_structured_data(census, poi_types):
-    try:
-        total_pop = int(census.get("B01001_001E", 0))
-        median_income = int(census.get("B19013_001E", 0))
-        white = int(census.get("B02001_002E", 0))
-        black = int(census.get("B02001_003E", 0))
-        asian = int(census.get("B02001_005E", 0))
-
-        return {
-            "Demographics": {
-                "Total Population": total_pop,
-                "Median Income": f"${median_income:,}",
-                "Race Breakdown (%)": {
-                    "White": round(white / total_pop * 100, 1),
-                    "Black": round(black / total_pop * 100, 1),
-                    "Asian": round(asian / total_pop * 100, 1)
-                }
-            },
-            "Nearby Place Types": poi_types,
-            "User Notes": user_notes
-        }
-    except:
-        return None
-
-def build_patron_prompt(zip_codes, combined_data, mode):
-    prompt = "You are a strategic anthropologist and behavioral branding expert.\n\n"
-    if mode == "Cumulative (combined)":
-        prompt += f"Based on the following cumulative data for ZIP codes {', '.join(zip_codes)}, identify the top 5 most representative audience personas across the region. Each persona must:\n"
-    else:
-        prompt += f"Generate personas for each individual ZIP code below. For each ZIP, create up to 3 relevant personas.\n"
-
-    prompt += """
-- Start with their prevalence score in parentheses (e.g., "(~28%) The Sun Chasers: ...")
-- Have a collective, behaviorally inspired name
-- Include a short lifestyle summary (values, habits, motivations, daily behaviors)
-- Identify the group's **Archetypal Opportunity** — the type of psychological energy they are drawn to (choose from: Innocent, Explorer, Sage, Hero, Rebel, Magician, Citizen, Lover, Jester, Caregiver, Creator, Sovereign)
-- Include 3 projected personality traits
-- Include 3–5 behavioral or emotional motivators
-- Include a brief description of 2–3 secondary audience groups they influence
-- Include one sentence of strategic brand opportunity insight
-- List the top 5 national brands they are most likely to shop or admire
-"""
-
-    if mode == "Cumulative (combined)":
-        prompt += "\nOrder all personas from highest to lowest estimated prevalence.\n"
-    prompt += f"\nData:\n{json.dumps(combined_data, indent=2)}"
-    return prompt
-
-def build_opportunity_prompt(patrons_summary, competitors_summary):
-    return f"""
-You are a restaurant brand strategist.
-
-Based on the following audience personas and competitor brand personalities:
-
----
-
-**Patron Personas:**
-{patrons_summary}
-
-**Competitor Brands:**
-{competitors_summary}
-
----
-
-Identify three personality traits that represent opportunity whitespace. For each:
-- Explain why it’s open
-- Link it to specific patron groups that would love it
-- Keep it concise and strategic
-"""
-
-def render_persona_cards(text_block):
-    personas = text_block.split("(~")
-    for p in personas[1:]:
-        lines = p.split("\n")
-        header = lines[0].replace(")", ")**:")
-        with st.container():
-            st.markdown(f"### 🌐 {header}")
-            st.markdown("\n".join(lines[1:]))
-
 # ---------- RUN ----------
 if st.button("Generate Analysis"):
     zip_codes = [z.strip() for z in zip_codes_input.split(",") if z.strip()]
     if 1 <= len(zip_codes) <= 5:
-        combined_data = []
-        competitor_list = []
-        patrons_output = ""
+        search_terms = service_styles + cuisine_styles
+        all_competitors = []
 
         for zip_code in zip_codes:
-            with st.spinner(f"Collecting data for {zip_code}..."):
-                census_data = get_census_data(zip_code)
-                lat, lon = get_lat_lon(zip_code)
-                poi_types = get_places_data(lat, lon, cuisine_styles) if lat and lon and competitor_mode == "Auto via Google Places" else []
+            census_data = get_census_data(zip_code)
+            lat, lon = get_lat_lon(zip_code)
 
-                if census_data:
-                    structured = format_structured_data(census_data, [p['name'] for p in poi_types])
-                    structured["ZIP Code"] = zip_code
-                    combined_data.append(structured)
-                    competitor_list.extend(poi_types)
-                else:
-                    st.error(f"Failed to retrieve Census data for {zip_code}.")
+            if competitor_mode == "Auto via Google Places" and lat and lon:
+                competitors = get_places_data(lat, lon, search_terms)
+            else:
+                competitors = []
 
-        competitor_list.extend(manual_competitors)
+            all_competitors.extend(competitors)
 
-        if combined_data:
-            tab1, tab2 = st.tabs(["🧬 Patrons", "🍊 Competition"])
+        all_competitors.extend(manual_competitors)
 
-            with tab1:
-                with st.spinner("Generating personas..."):
-                    prompt = build_patron_prompt(zip_codes, combined_data, mode)
-                    try:
-                        response = client.chat.completions.create(
-                            model="gpt-3.5-turbo",
-                            messages=[{"role": "user", "content": prompt}],
-                            temperature=0.85,
-                            max_tokens=2000
-                        )
-                        patrons_output = response.choices[0].message.content
-                        st.markdown(patrons_output)
-                        st.markdown("---")
-                        st.subheader("📉 Visual Persona Cards")
-                        render_persona_cards(patrons_output)
-                    except Exception as e:
-                        st.error(f"OpenAI error: {e}")
+        # Limit to Top 10 by score
+        all_competitors = sorted(
+            all_competitors,
+            key=lambda x: (x.get("rating", 0) or 0) * (x.get("review_count", 0) or 0),
+            reverse=True
+        )[:10]
 
-            with tab2:
-                st.markdown("### Top Competitor Restaurants")
-                competitors_summary = ""
-                for r in competitor_list:
-                    competitors_summary += f"- {r['name']} at {r.get('vicinity', '')}\n"
-                    st.markdown(f"**{r['name']}** — {r.get('vicinity', 'Manual Entry')}")
-                    st.markdown(f"""
-- **Google Rating:** ⭐ {r.get("rating", "N/A")} ({r.get("review_count", "0")} reviews)
-""")
-                    if r.get("website"):
-                        website_text = get_website_text(r['website'])
-                        brand_analysis = analyze_brand_with_gpt(r['name'], r.get('vicinity', ''), website_text)
-                        st.markdown(brand_analysis)
-                    else:
-                        st.markdown("_No website provided for analysis._")
-
-                if patrons_output and competitors_summary:
-                    st.markdown("### 🌟 Opportunity Personality Traits")
-                    opp_prompt = build_opportunity_prompt(patrons_output, competitors_summary)
-                    try:
-                        opp_response = client.chat.completions.create(
-                            model="gpt-3.5-turbo",
-                            messages=[{"role": "user", "content": opp_prompt}],
-                            temperature=0.85,
-                            max_tokens=1000
-                        )
-                        st.markdown(opp_response.choices[0].message.content)
-                    except Exception as e:
-                        st.error(f"OpenAI error: {e}")
+        st.subheader("Top 10 Competitor Analysis")
+        for comp in all_competitors:
+            st.markdown(f"### {comp['name']}")
+            st.markdown(f"_Location:_ {comp.get('vicinity', 'Manual Entry')}")
+            st.markdown(f"⭐ **Rating:** {comp.get('rating', 'N/A')} ({comp.get('review_count', '0')} reviews)")
+            if comp.get("website"):
+                website_text = get_website_text(comp['website'])
+                analysis = analyze_brand_with_gpt(comp['name'], comp.get('vicinity', ''), website_text)
+                st.markdown(analysis)
+            else:
+                st.markdown("_No website available for this competitor._")
     else:
         st.warning("Please enter between 1 and 5 ZIP codes, separated by commas.")
