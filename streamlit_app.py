@@ -68,7 +68,12 @@ def get_places_data(lat, lon, cuisine_styles):
     if response.status_code == 200:
         data = response.json()
         for result in data.get("results", []):
-            places.append({"name": result.get("name"), "vicinity": result.get("vicinity")})
+            places.append({
+                "name": result.get("name"),
+                "vicinity": result.get("vicinity"),
+                "rating": result.get("rating"),
+                "review_count": result.get("user_ratings_total")
+            })
     return places[:10]
 
 def format_structured_data(census, poi_types):
@@ -164,7 +169,7 @@ if st.button("Generate Analysis"):
                     st.error(f"Failed to retrieve Census data for {zip_code}.")
 
         if combined_data:
-            tab1, tab2 = st.tabs(["🧬 Patrons", "🥊 Competition"])
+            tab1, tab2 = st.tabs(["🧬 Patrons", "🍊 Competition"])
 
             with tab1:
                 with st.spinner("Generating personas..."):
@@ -187,10 +192,13 @@ if st.button("Generate Analysis"):
                 for r in competitor_list:
                     competitors_summary += f"- {r['name']} at {r['vicinity']}\n"
                     st.markdown(f"**{r['name']}** — {r['vicinity']}")
-                    st.markdown("\n_(Yelp Rating, Followers, Personality Traits & Messaging will be added via API integration.)_\n")
+                    st.markdown(f"""
+- **Google Rating:** ⭐ {r.get("rating", "N/A")} ({r.get("review_count", "0")} reviews)
+- _(Social followers, traits & messaging to be added)_
+""")
 
                 if patrons_output and competitors_summary:
-                    st.markdown("### 🎯 Opportunity Personality Traits")
+                    st.markdown("### 🌟 Opportunity Personality Traits")
                     opp_prompt = build_opportunity_prompt(patrons_output, competitors_summary)
                     try:
                         opp_response = client.chat.completions.create(
