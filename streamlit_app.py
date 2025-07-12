@@ -59,8 +59,13 @@ if competitor_mode == "Manual Entry":
         for i in range(3):
             name = st.text_input(f"Competitor {i+1} Name", key=f"manual_name_{i}")
             website = st.text_input(f"Competitor {i+1} Website", key=f"manual_site_{i}")
+            multi_unit = st.radio(f"Is {name} Multi-Unit?", ["Yes", "No"], key=f"mu_{i}") if name else ""
             if name:
-                manual_competitors.append({"name": name, "website": website})
+                manual_competitors.append({
+                    "name": name,
+                    "website": website,
+                    "multi_unit": multi_unit
+                })
 
 # ---------- DATA FUNCTIONS ----------
 def build_patron_prompt(zip_codes, user_notes, mode):
@@ -80,48 +85,83 @@ def build_patron_prompt(zip_codes, user_notes, mode):
     7. Estimated prevalence (% of total population they represent)
     """
 
-# ---------- SEARCH TERM BUILD ----------
-search_terms = []
-for style in selected_service_styles:
-    search_terms += service_style_map.get(style, [])
-search_terms += cuisine_styles
+def get_website_text(url):
+    try:
+        response = requests.get(url, timeout=10)
+        soup = BeautifulSoup(response.text, 'html.parser')
+        return soup.get_text(separator=' ', strip=True)
+    except Exception as e:
+        return f"Error fetching website content: {e}"
 
-# ---------- RUN BUTTON ----------
-if st.button("Run Matador Analysis"):
-    zip_codes = [z.strip() for z in zip_codes_input.split(",") if z.strip()]
-    if not zip_codes:
-        st.error("Please enter at least one ZIP code.")
-    elif len(zip_codes) > 5:
-        st.error("You can enter up to 5 ZIP codes only.")
-    else:
-        with st.spinner("Analyzing audience personas..."):
-            prompt = build_patron_prompt(zip_codes, user_notes, mode)
-            try:
-                response = client.chat.completions.create(
-                    model="gpt-4",
-                    messages=[{"role": "user", "content": prompt}],
-                    temperature=0.8,
-                    max_tokens=2500
-                )
-                output = response.choices[0].message.content
+def analyze_brand_with_gpt(name, website_text, is_multi_unit):
+    prompt = f"""
+    You are a brand strategist.
 
-                st.subheader("🎯 Patron Personas")
-                personas = output.split("\n\n")
-                for block in personas:
-                    lines = block.strip().split("\n")
-                    if not lines:
-                        continue
-                    header_line = lines[0]
-                    name, prevalence = "Unknown", "?"
-                    if " - " in header_line:
-                        name, prevalence = header_line.split(" - ")
-                    elif ":" in header_line:
-                        name, prevalence = header_line.split(":")
-                    name = name.strip()
-                    prevalence = prevalence.strip().replace("Prevalence", "").replace("(", "").replace(")", "")
+    Analyze the following restaurant brand based on their website content.
 
-                    st.markdown(f"### {name} — {prevalence}")
-                    st.markdown("\n".join([f"- {line.strip()}" for line in lines[1:] if line.strip()]))
+    Restaurant Name: {name}
+    Multi-Unit: {is_multi_unit}
 
-            except Exception as e:
-                st.error(f"Failed to generate personas: {e}")
+    Website Content:
+    {website_text[:3000]}
+
+    Provide:
+    - Tone of Voice
+    - 3 Personality Traits
+    - Core Message or Brand Angle
+    - What they promote most (e.g., ingredients, culture, price, speed)
+    - Final Impression in 1 sentence
+    """
+    try:
+        response = client.chat.completions.create(
+            model="gpt-3.5-turbo",
+            messages=[{"role": "user", "content": prompt}],
+            temperature=0.7,
+            max_tokens=500
+        )
+        return response.choices[0].message.content
+    except Exception as e:
+        return f"Error analyzing brand: {e}"
+
+def get_lat_lon(zip_code):
+    url = f"https://maps.googleapis.com/maps/api/geocode/json?address={zip_code}&key={st.secrets['GOOGLE_API_KEY']}"
+    response = requests.get(url)
+    if response.status_code == 200:
+        results = response.json().get("results")
+        if results:
+            location = results[0]["geometry"]["location"]
+            return location["lat"], location["lng"]
+    return None, None
+
+def get_places_data(lat, lon, search_terms):
+    keyword = "+".join(search_terms)
+    nearby_url = (
+        f"https://maps.googleapis.com/maps/api/place/nearbysearch/json?"
+        f"location={lat},{lon}&radius=5000&type=restaurant&keyword={keyword}"
+        f"&key={st.secrets['GOOGLE_API_KEY']}"
+    )
+    response = requests.get(nearby_url)
+    results = response.json().get("results", [])
+    top_places = sorted(results, key=lambda x: x.get("user_ratings_total", 0), reverse=True)[:10]
+
+    processed = []
+    for place in top_places:
+        name = place.get("name")
+        rating = place.get("rating")
+        count = place.get("user_ratings_total")
+        place_id = place.get("place_id")
+        website = ""
+
+        detail_url = f"https://maps.googleapis.com/maps/api/place/details/json?place_id={place_id}&fields=website&key={st.secrets['GOOGLE_API_KEY']}"
+        detail_response = requests.get(detail_url)
+        if detail_response.status_code == 200:
+            website = detail_response.json().get("result", {}).get("website", "")
+
+        processed.append({
+            "name": name,
+            "rating": rating,
+            "review_count": count,
+            "website": website,
+            "multi_unit": "Unknown"
+        })
+    return processed
