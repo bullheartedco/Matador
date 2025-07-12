@@ -89,17 +89,39 @@ search_terms += cuisine_styles
 # ---------- RUN BUTTON ----------
 if st.button("Run Matador Analysis"):
     zip_codes = [z.strip() for z in zip_codes_input.split(",") if z.strip()]
-    if 1 <= len(zip_codes) <= 5:
-        st.success("Running Matador analysis...")
-
-        # Combine service styles and cuisine styles
-        search_terms = []
-        for style in selected_service_styles:
-            search_terms += service_style_map.get(style, [])
-        search_terms += cuisine_styles
-
-        # TODO: Insert logic to process zip_codes, user_notes, search_terms
-        # e.g., call OpenAI for Patron profiles and competitor analysis
-
+    if not zip_codes:
+        st.error("Please enter at least one ZIP code.")
+    elif len(zip_codes) > 5:
+        st.error("You can enter up to 5 ZIP codes only.")
     else:
-        st.error("Please enter between 1 and 5 ZIP codes.")
+        with st.spinner("Analyzing audience personas..."):
+            prompt = build_patron_prompt(zip_codes, user_notes, mode)
+            try:
+                response = client.chat.completions.create(
+                    model="gpt-4",
+                    messages=[{"role": "user", "content": prompt}],
+                    temperature=0.8,
+                    max_tokens=2500
+                )
+                output = response.choices[0].message.content
+
+                st.subheader("🎯 Patron Personas")
+                personas = output.split("\n\n")
+                for block in personas:
+                    lines = block.strip().split("\n")
+                    if not lines:
+                        continue
+                    header_line = lines[0]
+                    name, prevalence = "Unknown", "?"
+                    if " - " in header_line:
+                        name, prevalence = header_line.split(" - ")
+                    elif ":" in header_line:
+                        name, prevalence = header_line.split(":")
+                    name = name.strip()
+                    prevalence = prevalence.strip().replace("Prevalence", "").replace("(", "").replace(")", "")
+
+                    st.markdown(f"### {name} — {prevalence}")
+                    st.markdown("\n".join([f"- {line.strip()}" for line in lines[1:] if line.strip()]))
+
+            except Exception as e:
+                st.error(f"Failed to generate personas: {e}")
