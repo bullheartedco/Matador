@@ -41,7 +41,7 @@ cuisine_styles = st.multiselect(
     [
         "Mexican", "Chinese", "Japanese", "Italian", "Thai", "Vietnamese",
         "Indian", "American", "Korean", "Mediterranean", "Seafood",
-        "Barbecue", "Vegan", "Vegetarian", "Burgers", "Pizza", "Coffee", "Bakery"
+        "Barbecue", "Vegan", "Vegetarian", "Burgers", "Pizza", "Coffee", "Bakery", "French", "Chicken"
     ]
 )
 
