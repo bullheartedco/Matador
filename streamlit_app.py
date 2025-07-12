@@ -86,7 +86,20 @@ for style in selected_service_styles:
     search_terms += service_style_map.get(style, [])
 search_terms += cuisine_styles
 
-# ---------- QUERY BUTTON ----------
+# ---------- RUN BUTTON ----------
 if st.button("Run Matador Analysis"):
-    st.success("Query initiated.")
-    # Your logic to trigger the processing and display outputs here.
+    zip_codes = [z.strip() for z in zip_codes_input.split(",") if z.strip()]
+    if 1 <= len(zip_codes) <= 5:
+        st.success("Running Matador analysis...")
+
+        # Combine service styles and cuisine styles
+        search_terms = []
+        for style in selected_service_styles:
+            search_terms += service_style_map.get(style, [])
+        search_terms += cuisine_styles
+
+        # TODO: Insert logic to process zip_codes, user_notes, search_terms
+        # e.g., call OpenAI for Patron profiles and competitor analysis
+
+    else:
+        st.error("Please enter between 1 and 5 ZIP codes.")
