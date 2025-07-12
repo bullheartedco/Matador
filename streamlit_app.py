@@ -153,29 +153,15 @@ def build_patron_prompt(zip_codes, user_notes, mode):
     """
     return base
 
-def build_whitespace_prompt(zip_codes, competitors, patron_profiles):
-    base = f"""
-    You are a brand strategist. Analyze the whitespace opportunity for a new restaurant brand based on the following:
-    - ZIP Codes: {', '.join(zip_codes)}
-    - Competitor Personalities: {[c['name'] for c in competitors]}
-    - Patron Groups: {patron_profiles}
-
-    Output:
-    1. Three suggested personality traits for a new brand
-    2. A sentence or two explaining why each is a whitespace
-    3. The Patron personas most likely to be attracted to each trait
-    """
-    return base
-
 def sort_personas_by_prevalence(output):
     persona_blocks = re.split(r"(?=\n\d+\.\s)|(?=^\d+\.\s)", output.strip())
     scored = []
     for block in persona_blocks:
         match = re.search(r"(?i)Prevalence Score.*?(\d+)%", block)
-        name_match = re.search(r"^(\d+\.\s+)?(.+?)\n", block.strip())
+        name_match = re.search(r"Persona Name[:\-\s]*([A-Za-z0-9 '\"&]+)", block)
         if match and name_match:
             score = int(match.group(1))
-            name = name_match.group(2).strip()
+            name = name_match.group(1).strip()
             scored.append((score, name, block))
     scored.sort(reverse=True)
     return [(name, score, b) for score, name, b in scored]
@@ -223,7 +209,7 @@ if st.button("Generate Analysis"):
                     output = response.choices[0].message.content
                     sorted_personas = sort_personas_by_prevalence(output)
                     for title, prevalence, persona in sorted_personas:
-                        st.markdown(f"## {title} — {prevalence}%")
+                        st.markdown(f"### {title} — {prevalence}%")
                         st.markdown(persona)
                 except Exception as e:
                     st.error(f"Error generating persona profiles: {e}")
@@ -245,16 +231,26 @@ if st.button("Generate Analysis"):
             st.subheader("Personality Whitespace Opportunities")
             with st.spinner("Analyzing whitespace opportunities..."):
                 try:
-                    patron_summaries = ", ".join([f"{title} ({score}%)" for title, score, _ in sorted_personas])
-                    whitespace_prompt = build_whitespace_prompt(zip_codes, sorted_comps, patron_summaries)
+                    patron_names = [title for title, _, _ in sorted_personas]
+                    comp_names = [c['name'] for c in sorted_comps]
+                    whitespace_prompt = f"""
+                    You are a brand strategist. Based on the following audience groups and existing competitors, identify whitespace opportunities in brand personality:
+
+                    Patrons: {', '.join(patron_names)}
+                    Competitors: {', '.join(comp_names)}
+
+                    Output:
+                    - 3 distinct sets of 3 personality traits that are not currently well-represented by the competitors.
+                    - For each trait set, list which patron group(s) are most likely to be attracted to that brand personality.
+                    Format in a clear and skimmable list.
+                    """
                     whitespace_response = client.chat.completions.create(
                         model="gpt-3.5-turbo",
                         messages=[{"role": "user", "content": whitespace_prompt}],
                         temperature=0.7,
                         max_tokens=700
                     )
-                    whitespace_output = whitespace_response.choices[0].message.content
-                    st.markdown(whitespace_output)
+                    st.markdown(whitespace_response.choices[0].message.content)
                 except Exception as e:
                     st.error(f"Error generating whitespace analysis: {e}")
     else:
