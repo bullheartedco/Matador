@@ -75,7 +75,7 @@ Based on the following data for ZIP code {zip_code}, identify the top 5 distinct
 
 - Have a collective, behaviorally inspired name (e.g., "Sun Chasers", "Concrete Seekers")
 - Include a short lifestyle summary (values, habits, motivations, daily behaviors)
-- Identify the group's **Archetypal Opportunity** — the type of psychological identity or archetypal energy they are drawn to (e.g., "the Creator," "the Rebel")
+- Identify the group's **Archetypal Opportunity** — the type of psychological energy they are drawn to. Choose one from these 12 modified Jungian archetypes: Innocent, Explorer, Sage, Hero, Rebel, Magician, Citizen, Lover, Jester, Caregiver, Creator, Sovereign.
 - Include 3 projected personality traits for the group (e.g., curious, intentional, bold)
 - Include 3–5 behavioral or emotional motivators
 - Include a brief description of 2–3 secondary audience groups they influence
