@@ -4,6 +4,7 @@ import requests
 from openai import OpenAI
 import json
 from bs4 import BeautifulSoup
+import re
 
 # ---------- CONFIG ----------
 st.set_page_config(page_title="Matador: Local Audience Profiler", layout="wide")
@@ -118,5 +119,34 @@ def build_patron_prompt(zip_codes, user_notes, mode):
     Then, provide whitespace analysis:
     - Suggest 3 different combinations of 3 unique personality traits that are not currently owned by local competitors
     - For each combo, list which Patron Personas would most likely be attracted to it
+    - Include a short explanation for why this combo fills a whitespace gap in the market
     """
     return base
+
+# ---------- RENDER PATRONS ----------
+def render_persona_output(text):
+    personas = re.split(r'\n(?=Persona Name\s*:\s*)', text.strip())
+    for persona in personas:
+        if not persona.strip():
+            continue
+        name_match = re.search(r'Persona Name\s*:\s*(.+)', persona)
+        prevalence_match = re.search(r'Prevalence Score\s*:\s*(\d+%?)', persona)
+
+        name = name_match.group(1).strip() if name_match else "Unnamed Persona"
+        prevalence = prevalence_match.group(1).strip() if prevalence_match else "Unknown"
+
+        st.markdown(f"### {name} – {prevalence}")
+
+        bullet_points = []
+        for label in [
+            "Lifestyle Summary", "Motivators", "Archetypal Opportunity",
+            "3 Personality Traits", "Influenced Groups", "5 Brands They Love"
+        ]:
+            pattern = rf"{label}\s*:\s*(.+?)(?=\n[A-Z0-9]|$)"
+            match = re.search(pattern, persona, re.DOTALL)
+            if match:
+                value = match.group(1).strip()
+                bullet_points.append(f"**{label}:** {value}")
+
+        for bp in bullet_points:
+            st.markdown(f"- {bp}")
