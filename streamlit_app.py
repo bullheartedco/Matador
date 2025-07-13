@@ -63,7 +63,7 @@ if competitor_mode == "Manual Entry":
 
 # ---------- DATA FUNCTIONS ----------
 def fetch_census_for_zips(zip_codes):
-    census_data = []
+    results = []
     for zip_code in zip_codes:
         url = "https://api.census.gov/data/2021/acs/acs5"
         params = {
@@ -77,8 +77,8 @@ def fetch_census_for_zips(zip_codes):
             if len(data) > 1:
                 labels = data[0]
                 values = data[1]
-                census_data.append(dict(zip(labels, values)))
-    return census_data
+                results.append(dict(zip(labels, values)))
+    return results
 
 def get_lat_lon(zip_code):
     url = f"https://maps.googleapis.com/maps/api/geocode/json?address={zip_code}&key={st.secrets['GOOGLE_API_KEY']}"
@@ -170,22 +170,26 @@ def analyze_brand_with_gpt(name, address, website_text):
     except Exception as e:
         return f"Error analyzing brand: {e}"
 
-def build_patron_prompt(zip_codes, user_notes, mode):
+def build_patron_prompt(zip_codes, user_notes, census_data, mode):
     return f"""
-    You are an expert in psychographics, anthropology, and brand strategy.
+You are an expert in psychographics, anthropology, and brand strategy.
 
-    Based on the following data for a 10-mile radius around ZIP code(s): {', '.join(zip_codes)}
-    - User Notes: {user_notes}
+Based on the following data for a 10-mile radius around ZIP code(s): {', '.join(zip_codes)}:
 
-    Generate 3–5 audience personas with the following:
-    1. Persona Name (must be a collective name like \"Sun Chasers\", not an individual name)
-    2. Summary of their lifestyle and cultural tendencies
-    3. Archetypal opportunity (what they're psychologically drawn to; choose 1 of the 12 Jungian archetypes but renamed as: Citizen, Sage, Rebel, Lover, Creator, Explorer, Innocent, Magician, Hero, Jester, Caregiver, Sovereign)
-    4. Motivators (emotional + behavioral drivers)
-    5. 2–3 influenced secondary groups
-    6. 5 brands they love that reflect their values
-    7. Estimated prevalence (% of total population they represent)
-    """
+Census Insights:
+{census_data}
+
+User Notes: {user_notes}
+
+Generate 3–5 audience personas with the following:
+1. Persona Name (must be a collective name like "Sun Chasers", not an individual name)
+2. Summary of their lifestyle and cultural tendencies
+3. Archetypal opportunity (what they're psychologically drawn to; choose 1 of the 12 Jungian archetypes but renamed as: Citizen, Sage, Rebel, Lover, Creator, Explorer, Innocent, Magician, Hero, Jester, Caregiver, Sovereign)
+4. Motivators (emotional + behavioral drivers)
+5. 2–3 influenced secondary groups
+6. 5 brands they love that reflect their values
+7. Estimated prevalence (% of total population they represent)
+"""
 
 # ---------- RUN BUTTON ----------
 if st.button("Generate Report"):
@@ -209,6 +213,12 @@ if st.button("Generate Report"):
                         demographic_summary = "No Census data available for these ZIPs."
 
                     # Build prompt using summary
+                    census_data = fetch_census_for_zips(zip_codes)
+                    demographic_summary = ""
+                    for entry in census_data:
+                        demographic_summary += f"- {entry['NAME']}: Population {entry.get('B01001_001E', 'N/A')}, "
+                        demographic_summary += f"Median Income ${entry.get('B19013_001E', 'N/A')}, "
+                        demographic_summary += f"White %: {entry.get('B02001_002E', 'N/A')}, Black %: {entry.get('B02001_003E', 'N/A')}, Asian %: {entry.get('B02001_005E', 'N/A')}\n"
                     full_prompt = (
                         "Use this Census data ethically and sensitively to guide audience personas for restaurant brand strategy. "
                         "Do not generalize by race or income, but infer cultural drivers where appropriate.\n\n"
