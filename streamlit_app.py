@@ -63,7 +63,7 @@ if competitor_mode == "Manual Entry":
 
 # ---------- DATA FUNCTIONS ----------
 def fetch_census_for_zips(zip_codes):
-    results = []
+    rows = []
     for zip_code in zip_codes:
         url = "https://api.census.gov/data/2021/acs/acs5"
         params = {
@@ -77,8 +77,8 @@ def fetch_census_for_zips(zip_codes):
             if len(data) > 1:
                 labels = data[0]
                 values = data[1]
-                results.append(dict(zip(labels, values)))
-    return results
+                rows.append(dict(zip(labels, values)))
+    return rows
 
 def get_lat_lon(zip_code):
     url = f"https://maps.googleapis.com/maps/api/geocode/json?address={zip_code}&key={st.secrets['GOOGLE_API_KEY']}"
@@ -198,55 +198,53 @@ if st.button("Generate Report"):
         tabs = st.tabs(["Patrons", "Competition", "White Space"])
 
         with tabs[0]:
-            with st.spinner("Generating audience personas..."):
-                try:
-                    # Fetch Census Data
-                    census_rows = fetch_census_for_zips(zip_codes)
-                    if census_rows:
-                        demo_parts = [
-                            f"{z['NAME']} — Population: {z['B01001_001E']}, Median Income: ${z['B19013_001E']}, "
-                            f"Race breakdown includes White: {z['B02001_002E']}, Black or African American: {z['B02001_003E']}, Asian: {z['B02001_005E']}"
-                            for z in census_rows
-                        ]
-                        demographic_summary = "\n".join(demo_parts)
-                    else:
-                        demographic_summary = "No Census data available for these ZIPs."
+    with st.spinner("Generating audience personas..."):
+        try:
+            # Fetch Census Data once
+            census_data = fetch_census_for_zips(zip_codes)
 
-                    # Build prompt using summary
-                    census_data = fetch_census_for_zips(zip_codes)
-                    demographic_summary = ""
-                    for entry in census_data:
-                        demographic_summary += f"- {entry['NAME']}: Population {entry.get('B01001_001E', 'N/A')}, "
-                        demographic_summary += f"Median Income ${entry.get('B19013_001E', 'N/A')}, "
-                        demographic_summary += f"White %: {entry.get('B02001_002E', 'N/A')}, Black %: {entry.get('B02001_003E', 'N/A')}, Asian %: {entry.get('B02001_005E', 'N/A')}\n"
-                    full_prompt = (
-                        "Use this Census data ethically and sensitively to guide audience personas for restaurant brand strategy. "
-                        "Do not generalize by race or income, but infer cultural drivers where appropriate.\n\n"
-                        f"Demographic Snapshot:\n{demographic_summary}\n\n"
-                        + build_patron_prompt(zip_codes, user_notes, mode)
-                    )
+            # Format Demographic Summary
+            if census_data:
+                demographic_summary = ""
+                for entry in census_data:
+                    demographic_summary += f"- {entry['NAME']}: Population {entry.get('B01001_001E', 'N/A')}, "
+                    demographic_summary += f"Median Income ${entry.get('B19013_001E', 'N/A')}, "
+                    demographic_summary += f"White %: {entry.get('B02001_002E', 'N/A')}, "
+                    demographic_summary += f"Black %: {entry.get('B02001_003E', 'N/A')}, "
+                    demographic_summary += f"Asian %: {entry.get('B02001_005E', 'N/A')}\n"
+            else:
+                demographic_summary = "No Census data available for these ZIPs."
 
-                    # GPT Call
-                    response = client.chat.completions.create(
-                        model="gpt-4",
-                        messages=[{"role": "user", "content": full_prompt}],
-                        temperature=0.75,
-                        max_tokens=1600
-                    )
-                    result = response.choices[0].message.content
-                    st.session_state["patron_personas_raw"] = result  # Save for white space reference
-                    personas = result.split("\n\n")
+            # Build GPT Prompt
+            full_prompt = (
+                "Use this Census data ethically and sensitively to guide audience personas for restaurant brand strategy. "
+                "Do not generalize by race or income, but infer cultural drivers where appropriate.\n\n"
+                f"Demographic Snapshot:\n{demographic_summary}\n\n"
+                + build_patron_prompt(zip_codes, user_notes, mode)
+            )
 
-                    for p in personas:
-                        if p.strip():
-                            lines = p.strip().split("\n")
-                            title_line = lines[0]
-                            other_lines = lines[1:]
-                            st.markdown(f"### {title_line}")
-                            for line in other_lines:
-                                st.markdown(f"- {line}")
-                except Exception as e:
-                    st.error(f"Error generating personas: {e}")
+            # GPT Call
+            response = client.chat.completions.create(
+                model="gpt-4",
+                messages=[{"role": "user", "content": full_prompt}],
+                temperature=0.75,
+                max_tokens=1600
+            )
+            result = response.choices[0].message.content
+            st.session_state["patron_personas_raw"] = result  # Save for white space tab
+            personas = result.split("\n\n")
+
+            # Display Personas
+            for p in personas:
+                if p.strip():
+                    lines = p.strip().split("\n")
+                    title_line = lines[0]
+                    other_lines = lines[1:]
+                    st.markdown(f"### {title_line}")
+                    for line in other_lines:
+                        st.markdown(f"- {line}")
+        except Exception as e:
+            st.error(f"Error generating personas: {e}")
 
         with tabs[1]:
             st.subheader("Top Competitor Analysis")
