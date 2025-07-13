@@ -182,8 +182,8 @@ if st.button("Generate Report"):
                     census_rows = fetch_census_for_zips(zip_codes)
                     if census_rows:
                         demo_parts = [
-                            f"{z['NAME']}: Pop {z['B01001_001E']}, Income ${z['B19013_001E']}, "
-                            f"White: {z['B02001_002E']}, Black: {z['B02001_003E']}"
+                            f"{z['NAME']} — Population: {z['B01001_001E']}, Median Income: ${z['B19013_001E']}, "
+                            f"Race breakdown includes White: {z['B02001_002E']}, Black or African American: {z['B02001_003E']}, Asian: {z['B02001_005E']}"
                             for z in census_rows
                         ]
                         demographic_summary = "\n".join(demo_parts)
@@ -191,7 +191,12 @@ if st.button("Generate Report"):
                         demographic_summary = "No Census data available for these ZIPs."
 
                     # Build prompt using summary
-                    full_prompt = f"Demographic Snapshot:\n{demographic_summary}\n\n" + build_patron_prompt(zip_codes, user_notes, mode)
+                     full_prompt = (
+                        "Use this Census data ethically and sensitively to guide audience personas for restaurant brand strategy. "
+                        "Do not generalize by race or income, but infer cultural drivers where appropriate.\n\n"
+                        f"Demographic Snapshot:\n{demographic_summary}\n\n"
+                        + build_patron_prompt(zip_codes, user_notes, mode)
+                    )
 
                     # GPT Call
                     response = client.chat.completions.create(
