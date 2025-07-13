@@ -178,10 +178,25 @@ if st.button("Generate Report"):
         with tabs[0]:
             with st.spinner("Generating audience personas..."):
                 try:
-                    prompt = build_patron_prompt(zip_codes, user_notes, mode)
+                    # Fetch Census Data
+                    census_rows = fetch_census_for_zips(zip_codes)
+                    if census_rows:
+                        demo_parts = [
+                            f"{z['NAME']}: Pop {z['B01001_001E']}, Income ${z['B19013_001E']}, "
+                            f"White: {z['B02001_002E']}, Black: {z['B02001_003E']}"
+                            for z in census_rows
+                        ]
+                        demographic_summary = "\n".join(demo_parts)
+                    else:
+                        demographic_summary = "No Census data available for these ZIPs."
+
+                    # Build prompt using summary
+                    full_prompt = f"Demographic Snapshot:\n{demographic_summary}\n\n" + build_patron_prompt(zip_codes, user_notes, mode)
+
+                    # GPT Call
                     response = client.chat.completions.create(
                         model="gpt-4",
-                        messages=[{"role": "user", "content": prompt}],
+                        messages=[{"role": "user", "content": full_prompt}],
                         temperature=0.75,
                         max_tokens=1600
                     )
