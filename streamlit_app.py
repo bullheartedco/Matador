@@ -191,7 +191,7 @@ if st.button("Generate Report"):
                         demographic_summary = "No Census data available for these ZIPs."
 
                     # Build prompt using summary
-                     full_prompt = (
+                    full_prompt = (
                         "Use this Census data ethically and sensitively to guide audience personas for restaurant brand strategy. "
                         "Do not generalize by race or income, but infer cultural drivers where appropriate.\n\n"
                         f"Demographic Snapshot:\n{demographic_summary}\n\n"
