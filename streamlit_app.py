@@ -237,14 +237,18 @@ if st.button("Generate Report"):
 
         with tabs[2]:
             st.subheader("White Space Opportunities")
-            whitespace_prompt = f"""
-            Based on the personas generated for ZIPs {', '.join(zip_codes)} and their collective motivators and archetypal attractions,
-            identify 3 whitespace opportunities for brand personality combinations not currently dominant.
-            For each, include:
-            - 3 personality traits
-            - Which of the identified personas would likely be attracted
-            - A short brand strategy insight
-            """
+            if "patron_personas_raw" in st.session_state:
+                whitespace_prompt = f"""
+                Based on the patron personas below, identify three whitespace brand personality opportunities that aren't currently dominant.
+
+                For each opportunity:
+                - List 3 underrepresented brand personality traits
+                - Name 2–3 patron personas who would likely be attracted
+                - Write a short brand strategy insight on how a new brand could embody this
+
+                Patron Personas:
+                {st.session_state['patron_personas_raw']}
+                """
             with st.spinner("Analyzing white space opportunities..."):
                 try:
                     response = client.chat.completions.create(
