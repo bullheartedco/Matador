@@ -117,9 +117,94 @@ if st.button("Generate Report"):
                     st.error(f"Error generating personas: {e}")
 
         with tabs[1]:
-            st.markdown("_Competition analysis will appear here once integrated._")
+            st.subheader("Top Competitor Analysis")
+            all_competitors = []
 
-        with tabs[2]:
-            st.markdown("_White space insights will be generated based on persona gaps and competition._")
+            for zip_code in zip_codes:
+                lat, lon = get_lat_lon(zip_code)
+                if lat and lon and competitor_mode == "Auto via Google Places":
+                    comps = get_places_data(lat, lon, search_terms)
+                    all_competitors.extend(comps)
+
+            all_competitors.extend(manual_competitors)
+
+            # Deduplicate by name
+            seen_names = set()
+            unique_comps = []
+            for comp in all_competitors:
+                if comp["name"] not in seen_names:
+                    unique_comps.append(comp)
+                    seen_names.add(comp["name"])
+
+            sorted_comps = sorted(
+                unique_comps,
+                key=lambda x: (x.get("rating", 0) or 0) * (x.get("review_count", 0) or 0),
+                reverse=True
+            )[:10]
+
+            if sorted_comps:
+                st.markdown(f"Found **{len(sorted_comps)}** unique competitors.")
+                for comp in sorted_comps:
+                    st.markdown(f"### {comp['name']}")
+                    st.markdown(f"**Location:** {comp.get('vicinity', 'Manual Entry')}")
+                    st.markdown(f"**Rating:** ⭐ {comp.get('rating', 'N/A')} ({comp.get('review_count', '0')} reviews)")
+                    if comp.get("website"):
+                        st.markdown(f"**Website:** [{comp['website']}]({comp['website']})")
+                        website_text = get_website_text(comp['website'])
+                        brand_analysis = analyze_brand_with_gpt(comp['name'], comp.get("vicinity", ""), website_text)
+                        st.markdown(brand_analysis)
+
+                        # Quick multi-unit detection
+                        unit_check = "likely multi-unit" if "locations" in website_text.lower() or "find a" in website_text.lower() else "likely independent"
+                        st.markdown(f"**Type:** {unit_check}")
+                    else:
+                        st.markdown("_No website available for this competitor._")
+            else:
+                st.warning("No competitors found based on your criteria.")
+
+            with tabs[2]:
+              st.subheader("White Space Opportunities")
+
+            with st.spinner("Analyzing persona + competitor gaps..."):
+                try:
+                    # Combine persona and competitor traits for analysis
+                    all_traits = []
+
+                    # Pull traits from GPT-generated persona results
+                    persona_text = result  # Reuse response from patron tab
+                    all_traits.append("Patron Profiles:\n" + persona_text)
+
+                    # Add all competitor brand content and summaries
+                    for comp in sorted_comps:
+                        if comp.get("website"):
+                            text = get_website_text(comp['website'])
+                            summary = analyze_brand_with_gpt(comp['name'], comp.get("vicinity", ""), text)
+                            all_traits.append(f"Competitor: {comp['name']}\n{summary}")
+
+                    white_space_prompt = f"""
+                    You are a brand strategist tasked with finding white space opportunities in the local market.
+
+                    Based on the following data, identify 3 potential brand personality trait combinations (3 traits each) that are:
+                    - Underserved by existing competitors
+                    - Aligned with audience needs and interests
+
+                    For each combo:
+                    1. List the 3 traits
+                    2. Name the patron personas most likely to be attracted to that combo
+                    3. Write a short description of what kind of brand could emerge from this
+
+                    Data to analyze:
+                    {"\n\n".join(all_traits[:8])}  # Limit for token safety
+                    """
+
+                    response = client.chat.completions.create(
+                        model="gpt-4",
+                        messages=[{"role": "user", "content": white_space_prompt}],
+                        temperature=0.7,
+                        max_tokens=1000
+                    )
+                    st.markdown(response.choices[0].message.content)
+                except Exception as e:
+                    st.error(f"Error generating white space analysis: {e}")
     else:
         st.warning("Please enter between 1 and 5 ZIP codes.")
