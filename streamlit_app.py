@@ -162,8 +162,8 @@ if st.button("Generate Report"):
             else:
                 st.warning("No competitors found based on your criteria.")
 
-            with tabs[2]:
-              st.subheader("White Space Opportunities")
+        with tabs[2]:
+            st.subheader("White Space Opportunities")
 
             with st.spinner("Analyzing persona + competitor gaps..."):
                 try:
@@ -174,28 +174,26 @@ if st.button("Generate Report"):
                     persona_text = result  # Reuse response from patron tab
                     all_traits.append("Patron Profiles:\n" + persona_text)
 
-                    # Add all competitor brand content and summaries
-                    for comp in sorted_comps:
+                    # Add up to 8 competitors’ summaries for token efficiency
+                    for comp in sorted_comps[:8]:
                         if comp.get("website"):
                             text = get_website_text(comp['website'])
                             summary = analyze_brand_with_gpt(comp['name'], comp.get("vicinity", ""), text)
                             all_traits.append(f"Competitor: {comp['name']}\n{summary}")
 
-                    white_space_prompt = f"""
-                    You are a brand strategist tasked with finding white space opportunities in the local market.
+                    joined_data = "\n\n".join(all_traits)
 
-                    Based on the following data, identify 3 potential brand personality trait combinations (3 traits each) that are:
-                    - Underserved by existing competitors
-                    - Aligned with audience needs and interests
-
-                    For each combo:
-                    1. List the 3 traits
-                    2. Name the patron personas most likely to be attracted to that combo
-                    3. Write a short description of what kind of brand could emerge from this
-
-                    Data to analyze:
-                    {"\n\n".join(all_traits[:8])}  # Limit for token safety
-                    """
+                    white_space_prompt = (
+                        "You are a brand strategist tasked with finding white space opportunities in the local market.\n\n"
+                        "Based on the following data, identify 3 potential brand personality trait combinations (3 traits each) that are:\n"
+                        "- Underserved by existing competitors\n"
+                        "- Aligned with audience needs and interests\n\n"
+                        "For each combo:\n"
+                        "1. List the 3 traits\n"
+                        "2. Name the patron personas most likely to be attracted to that combo\n"
+                        "3. Write a short description of what kind of brand could emerge from this\n\n"
+                        f"Data to analyze:\n{joined_data}"
+                    )
 
                     response = client.chat.completions.create(
                         model="gpt-4",
