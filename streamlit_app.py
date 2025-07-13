@@ -62,6 +62,24 @@ if competitor_mode == "Manual Entry":
                 manual_competitors.append({"name": name, "website": website})
 
 # ---------- DATA FUNCTIONS ----------
+def fetch_census_for_zips(zip_codes):
+    census_data = []
+    for zip_code in zip_codes:
+        url = "https://api.census.gov/data/2021/acs/acs5"
+        params = {
+            "get": "NAME,B01001_001E,B19013_001E,B02001_002E,B02001_003E,B02001_005E",
+            "for": f"zip code tabulation area:{zip_code}",
+            "key": st.secrets["CENSUS_API_KEY"]
+        }
+        response = requests.get(url, params=params)
+        if response.status_code == 200:
+            data = response.json()
+            if len(data) > 1:
+                labels = data[0]
+                values = data[1]
+                census_data.append(dict(zip(labels, values)))
+    return census_data
+
 def get_lat_lon(zip_code):
     url = f"https://maps.googleapis.com/maps/api/geocode/json?address={zip_code}&key={st.secrets['GOOGLE_API_KEY']}"
     response = requests.get(url)
@@ -168,23 +186,6 @@ def build_patron_prompt(zip_codes, user_notes, mode):
     6. 5 brands they love that reflect their values
     7. Estimated prevalence (% of total population they represent)
     """
-def fetch_census_for_zips(zip_codes):
-    census_data = []
-    for zip_code in zip_codes:
-        url = "https://api.census.gov/data/2021/acs/acs5"
-        params = {
-            "get": "NAME,B01001_001E,B19013_001E,B02001_002E,B02001_003E,B02001_005E",
-            "for": f"zip code tabulation area:{zip_code}",
-            "key": st.secrets["CENSUS_API_KEY"]
-        }
-        response = requests.get(url, params=params)
-        if response.status_code == 200:
-            data = response.json()
-            if len(data) > 1:
-                labels = data[0]
-                values = data[1]
-                census_data.append(dict(zip(labels, values)))
-    return census_data
 
 # ---------- RUN BUTTON ----------
 if st.button("Generate Report"):
