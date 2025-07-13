@@ -170,16 +170,13 @@ def analyze_brand_with_gpt(name, address, website_text):
     except Exception as e:
         return f"Error analyzing brand: {e}"
 
-def build_patron_prompt(zip_codes, user_notes, census_data, mode):
-    return f"""
+def build_patron_prompt(zip_codes, user_notes, mode):
+    if mode == "Cumulative (combined)":
+        return f"""
 You are an expert in psychographics, anthropology, and brand strategy.
 
-Based on the following data for a 10-mile radius around ZIP code(s): {', '.join(zip_codes)}:
-
-Census Insights:
-{census_data}
-
-User Notes: {user_notes}
+Based on the following data for a 10-mile radius around ZIP code(s): {', '.join(zip_codes)}
+- User Notes: {user_notes}
 
 Generate 3–5 audience personas with the following:
 1. Persona Name (must be a collective name like "Sun Chasers", not an individual name)
@@ -189,6 +186,30 @@ Generate 3–5 audience personas with the following:
 5. 2–3 influenced secondary groups
 6. 5 brands they love that reflect their values
 7. Estimated prevalence (% of total population they represent)
+"""
+    elif mode == "Individual (per ZIP)":
+        prompt = ""
+        for z in zip_codes:
+            prompt += f"""
+For ZIP code {z}, generate:
+- 1–2 audience personas with:
+  1. Persona Name (collective, not individual)
+  2. Lifestyle and cultural summary
+  3. Archetype attraction
+  4. Motivators
+  5. Influenced secondary groups
+  6. 5 brands they love
+  7. Prevalence estimate
+
+User Notes: {user_notes}
+
+"""
+        return f"""
+You are an expert in psychographics, anthropology, and brand strategy.
+
+Below are prompts for each ZIP code. Answer each separately.
+
+{prompt}
 """
 
 # ---------- RUN BUTTON ----------
