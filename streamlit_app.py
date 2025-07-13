@@ -186,9 +186,17 @@ if st.button("Generate Report"):
                         max_tokens=1600
                     )
                     result = response.choices[0].message.content
+                    st.session_state["patron_personas_raw"] = result  # Save for white space reference
                     personas = result.split("\n\n")
+
                     for p in personas:
-                        st.markdown(p)
+                        if p.strip():
+                            lines = p.strip().split("\n")
+                            title_line = lines[0]
+                            other_lines = lines[1:]
+                            st.markdown(f"### {title_line}")
+                            for line in other_lines:
+                                st.markdown(f"- {line}")
                 except Exception as e:
                     st.error(f"Error generating personas: {e}")
 
