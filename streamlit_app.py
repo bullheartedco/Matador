@@ -2,7 +2,6 @@
 import streamlit as st
 import requests
 from openai import OpenAI
-import json
 from bs4 import BeautifulSoup
 
 # ---------- CONFIG ----------
@@ -62,13 +61,97 @@ if competitor_mode == "Manual Entry":
             if name:
                 manual_competitors.append({"name": name, "website": website})
 
-# ---------- SEARCH TERM BUILD ----------
-search_terms = []
-for style in selected_service_styles:
-    search_terms += service_style_map.get(style, [])
-search_terms += cuisine_styles
+# ---------- DATA FUNCTIONS ----------
+def get_lat_lon(zip_code):
+    url = f"https://maps.googleapis.com/maps/api/geocode/json?address={zip_code}&key={st.secrets['GOOGLE_API_KEY']}"
+    response = requests.get(url)
+    if response.status_code == 200:
+        results = response.json().get("results")
+        if results:
+            location = results[0]["geometry"]["location"]
+            return location["lat"], location["lng"]
+    return None, None
 
-# ---------- PROMPT BUILD ----------
+def get_places_data(lat, lon, search_terms):
+    keyword = "+".join(search_terms)
+    nearby_url = (
+        f"https://maps.googleapis.com/maps/api/place/nearbysearch/json?"
+        f"location={lat},{lon}&radius=5000&type=restaurant&keyword={keyword}"
+        f"&key={st.secrets['GOOGLE_API_KEY']}"
+    )
+    nearby_response = requests.get(nearby_url)
+    raw_places = []
+
+    if nearby_response.status_code == 200:
+        data = nearby_response.json()
+        for result in data.get("results", []):
+            rating = result.get("rating", 0)
+            review_count = result.get("user_ratings_total", 0)
+            score = rating * review_count
+            raw_places.append({
+                "name": result.get("name"),
+                "vicinity": result.get("vicinity"),
+                "rating": rating,
+                "review_count": review_count,
+                "place_id": result.get("place_id"),
+                "score": score
+            })
+
+    top_places = sorted(raw_places, key=lambda x: x["score"], reverse=True)[:10]
+    places = []
+    for place in top_places:
+        details_url = (
+            f"https://maps.googleapis.com/maps/api/place/details/json?"
+            f"place_id={place['place_id']}&fields=website&key={st.secrets['GOOGLE_API_KEY']}"
+        )
+        details_response = requests.get(details_url)
+        website = ""
+        if details_response.status_code == 200:
+            website = details_response.json().get("result", {}).get("website", "")
+
+        places.append({
+            "name": place["name"],
+            "vicinity": place["vicinity"],
+            "rating": place["rating"],
+            "review_count": place["review_count"],
+            "website": website
+        })
+
+    return places
+
+def get_website_text(url):
+    try:
+        response = requests.get(url, timeout=10)
+        soup = BeautifulSoup(response.text, 'html.parser')
+        return soup.get_text(separator=' ', strip=True)
+    except Exception as e:
+        return f"Error fetching website content: {e}"
+
+def analyze_brand_with_gpt(name, address, website_text):
+    prompt = f"""
+    You are a brand strategist. Based on the following content from the restaurant's website, analyze and return:
+
+    1. The brand’s tone of voice
+    2. Three personality traits that reflect the brand
+    3. Their core brand message or positioning
+    4. What they emphasize in marketing (e.g. ingredients, experience, convenience)
+    5. Overall impression in 1 sentence
+
+    Restaurant Name: {name}
+    Location: {address}
+    Website Text: {website_text[:3000]}
+    """
+    try:
+        response = client.chat.completions.create(
+            model="gpt-3.5-turbo",
+            messages=[{"role": "user", "content": prompt}],
+            temperature=0.7,
+            max_tokens=500
+        )
+        return response.choices[0].message.content
+    except Exception as e:
+        return f"Error analyzing brand: {e}"
+
 def build_patron_prompt(zip_codes, user_notes, mode):
     return f"""
     You are an expert in psychographics, anthropology, and brand strategy.
@@ -86,28 +169,10 @@ def build_patron_prompt(zip_codes, user_notes, mode):
     7. Estimated prevalence (% of total population they represent)
     """
 
-# ---------- DATA FUNCTIONS ----------
-def get_lat_lon(zip_code):
-    url = f"https://maps.googleapis.com/maps/api/geocode/json?address={zip_code}&key={st.secrets['GOOGLE_API_KEY']}"
-    response = requests.get(url)
-    if response.status_code == 200:
-        results = response.json().get("results")
-        if results:
-            location = results[0]["geometry"]["location"]
-            return location["lat"], location["lng"]
-    return None, None
-
-# ---------- RESULT HANDLING ----------
+# ---------- RUN BUTTON ----------
 if st.button("Generate Report"):
     zip_codes = [z.strip() for z in zip_codes_input.split(",") if z.strip()]
     if 1 <= len(zip_codes) <= 5:
-
-        # --- Build search terms safely ---
-        search_terms = []
-        for s in selected_service_styles:
-            search_terms += service_style_map.get(s, [])
-        search_terms += cuisine_styles
-
         tabs = st.tabs(["Patrons", "Competition", "White Space"])
 
         with tabs[0]:
@@ -129,91 +194,60 @@ if st.button("Generate Report"):
 
         with tabs[1]:
             st.subheader("Top Competitor Analysis")
-            all_competitors = []
+            search_terms = []
+            for style in selected_service_styles:
+                search_terms += service_style_map.get(style, [])
+            search_terms += cuisine_styles
 
+            competitors = []
             for zip_code in zip_codes:
                 lat, lon = get_lat_lon(zip_code)
                 if lat and lon and competitor_mode == "Auto via Google Places":
                     comps = get_places_data(lat, lon, search_terms)
-                    all_competitors.extend(comps)
+                    competitors.extend(comps)
 
-            all_competitors.extend(manual_competitors)
+            competitors.extend(manual_competitors)
 
-            # Deduplicate by name
-            seen_names = set()
-            unique_comps = []
-            for comp in all_competitors:
-                if comp["name"] not in seen_names:
-                    unique_comps.append(comp)
-                    seen_names.add(comp["name"])
+            seen = set()
+            unique_competitors = []
+            for c in competitors:
+                if c["name"] not in seen:
+                    unique_competitors.append(c)
+                    seen.add(c["name"])
 
-            sorted_comps = sorted(
-                unique_comps,
-                key=lambda x: (x.get("rating", 0) or 0) * (x.get("review_count", 0) or 0),
-                reverse=True
-            )[:10]
-
-            if sorted_comps:
-                st.markdown(f"Found **{len(sorted_comps)}** unique competitors.")
-                for comp in sorted_comps:
-                    st.markdown(f"### {comp['name']}")
-                    st.markdown(f"**Location:** {comp.get('vicinity', 'Manual Entry')}")
-                    st.markdown(f"**Rating:** ⭐ {comp.get('rating', 'N/A')} ({comp.get('review_count', '0')} reviews)")
-                    if comp.get("website"):
-                        st.markdown(f"**Website:** [{comp['website']}]({comp['website']})")
-                        website_text = get_website_text(comp['website'])
-                        brand_analysis = analyze_brand_with_gpt(comp['name'], comp.get("vicinity", ""), website_text)
-                        st.markdown(brand_analysis)
-
-                        # Quick multi-unit detection
-                        unit_check = "likely multi-unit" if "locations" in website_text.lower() or "find a" in website_text.lower() else "likely independent"
-                        st.markdown(f"**Type:** {unit_check}")
-                    else:
-                        st.markdown("_No website available for this competitor._")
-            else:
-                st.warning("No competitors found based on your criteria.")
+            for comp in unique_competitors[:10]:
+                st.markdown(f"### {comp['name']}")
+                st.markdown(f"**Location:** {comp.get('vicinity', 'Manual Entry')}")
+                st.markdown(f"**Rating:** {comp.get('rating', 'N/A')} ({comp.get('review_count', '0')} reviews)")
+                if comp.get("website"):
+                    st.markdown(f"**Website:** {comp['website']}")
+                    website_text = get_website_text(comp['website'])
+                    analysis = analyze_brand_with_gpt(comp['name'], comp.get('vicinity', ''), website_text)
+                    st.markdown(analysis)
+                else:
+                    st.markdown("_No website available for this competitor._")
 
         with tabs[2]:
             st.subheader("White Space Opportunities")
-
-            with st.spinner("Analyzing persona + competitor gaps..."):
+            whitespace_prompt = f"""
+            Based on the personas generated for ZIPs {', '.join(zip_codes)} and their collective motivators and archetypal attractions,
+            identify 3 whitespace opportunities for brand personality combinations not currently dominant.
+            For each, include:
+            - 3 personality traits
+            - Which of the identified personas would likely be attracted
+            - A short brand strategy insight
+            """
+            with st.spinner("Analyzing white space opportunities..."):
                 try:
-                    # Combine persona and competitor traits for analysis
-                    all_traits = []
-
-                    # Pull traits from GPT-generated persona results
-                    persona_text = result  # Reuse response from patron tab
-                    all_traits.append("Patron Profiles:\n" + persona_text)
-
-                    # Add up to 8 competitors’ summaries for token efficiency
-                    for comp in sorted_comps[:8]:
-                        if comp.get("website"):
-                            text = get_website_text(comp['website'])
-                            summary = analyze_brand_with_gpt(comp['name'], comp.get("vicinity", ""), text)
-                            all_traits.append(f"Competitor: {comp['name']}\n{summary}")
-
-                    joined_data = "\n\n".join(all_traits)
-
-                    white_space_prompt = (
-                        "You are a brand strategist tasked with finding white space opportunities in the local market.\n\n"
-                        "Based on the following data, identify 3 potential brand personality trait combinations (3 traits each) that are:\n"
-                        "- Underserved by existing competitors\n"
-                        "- Aligned with audience needs and interests\n\n"
-                        "For each combo:\n"
-                        "1. List the 3 traits\n"
-                        "2. Name the patron personas most likely to be attracted to that combo\n"
-                        "3. Write a short description of what kind of brand could emerge from this\n\n"
-                        f"Data to analyze:\n{joined_data}"
-                    )
-
                     response = client.chat.completions.create(
                         model="gpt-4",
-                        messages=[{"role": "user", "content": white_space_prompt}],
-                        temperature=0.7,
+                        messages=[{"role": "user", "content": whitespace_prompt}],
+                        temperature=0.75,
                         max_tokens=1000
                     )
-                    st.markdown(response.choices[0].message.content)
+                    whitespace_results = response.choices[0].message.content
+                    st.markdown(whitespace_results)
                 except Exception as e:
-                    st.error(f"Error generating white space analysis: {e}")
+                    st.error(f"Error generating whitespace analysis: {e}")
     else:
         st.warning("Please enter between 1 and 5 ZIP codes.")
