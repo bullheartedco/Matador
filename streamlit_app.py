@@ -85,6 +85,8 @@ def build_patron_prompt(zip_codes, user_notes, mode):
     6. 5 brands they love that reflect their values
     7. Estimated prevalence (% of total population they represent)
     """
+
+# ---------- DATA FUNCTIONS ----------
 def get_lat_lon(zip_code):
     url = f"https://maps.googleapis.com/maps/api/geocode/json?address={zip_code}&key={st.secrets['GOOGLE_API_KEY']}"
     response = requests.get(url)
@@ -94,6 +96,7 @@ def get_lat_lon(zip_code):
             location = results[0]["geometry"]["location"]
             return location["lat"], location["lng"]
     return None, None
+
 # ---------- RESULT HANDLING ----------
 if st.button("Generate Report"):
     zip_codes = [z.strip() for z in zip_codes_input.split(",") if z.strip()]
