@@ -3,4 +3,5 @@ openai
 requests
 beautifulsoup4
 supabase
+stripe
 Add supabase dependency
