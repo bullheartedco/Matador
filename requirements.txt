@@ -1,6 +1,6 @@
 streamlit
 openai
-requests
 beautifulsoup4
 supabase
 stripe
+requests
