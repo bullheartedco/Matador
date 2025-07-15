@@ -212,59 +212,235 @@ def generate_report(zip_codes, user_notes, mode, service_styles, cuisine_styles,
         search_terms += service_style_map.get(style, [])
     search_terms += cuisine_styles
 
-            competitors = []
-            for zip_code in zip_codes:
-                lat, lon = get_lat_lon(zip_code)
-                if lat and lon and competitor_mode == "Auto via Google Places":
-                    comps = get_places_data(lat, lon, search_terms)
-                    competitors.extend(comps)
-
-            competitors.extend(manual_competitors)
-
-            seen = set()
-            unique_competitors = []
-            for c in competitors:
-                if c["name"] not in seen:
-                    unique_competitors.append(c)
-                    seen.add(c["name"])
-
-            for comp in unique_competitors[:10]:
-                st.markdown(f"### {comp['name']}")
-                st.markdown(f"**Location:** {comp.get('vicinity', 'Manual Entry')}")
-                st.markdown(f"**Rating:** {comp.get('rating', 'N/A')} ({comp.get('review_count', '0')} reviews)")
-                if comp.get("website"):
-                    st.markdown(f"**Website:** {comp['website']}")
-                    website_text = get_website_text(comp['website'])
-                    analysis = analyze_brand_with_gpt(comp['name'], comp.get('vicinity', ''), website_text)
-                    st.markdown(analysis)
-                else:
-                    st.markdown("_No website available for this competitor._")
-
-        with tabs[2]:
-            st.subheader("White Space Opportunities")
-            if "patron_personas_raw" in st.session_state:
-                whitespace_prompt = f"""
-                Based on the patron personas below, identify three whitespace brand personality opportunities that aren't currently dominant.
-
-                For each opportunity:
-                - List 3 underrepresented brand personality traits
-                - Name 2–3 patron personas who would likely be attracted
-                - Write a short brand strategy insight on how a new brand could embody this
-
-                Patron Personas:
-                {st.session_state['patron_personas_raw']}
-                """
-            with st.spinner("Analyzing white space opportunities..."):
-                try:
-                    response = client.chat.completions.create(
-                        model="gpt-4",
-                        messages=[{"role": "user", "content": whitespace_prompt}],
-                        temperature=0.75,
-                        max_tokens=1000
-                    )
-                    whitespace_results = response.choices[0].message.content
-                    st.markdown(whitespace_results)
-                except Exception as e:
-                    st.error(f"Error generating whitespace analysis: {e}")
+    competitors_list = []
+    if competitor_mode == "Auto via Google Places":
+        for zip_code in zip_codes:
+            lat, lon = get_lat_lon(zip_code)
+            if lat and lon:
+                competitors_list.extend(get_places_data(lat, lon, search_terms))
     else:
-        st.warning("Please enter between 1 and 5 ZIP codes.")
+        competitors_list.extend(manual_competitors)
+    
+    seen = set()
+    unique_competitors = []
+    for c in competitors_list:
+        if c["name"] not in seen:
+            website_text = get_website_text(c["website"]) if c.get("website") else ""
+            analysis = analyze_brand_with_gpt(c["name"], c.get("vicinity", ""), website_text) if website_text else "No website analysis available."
+            unique_competitors.append(f"### {c['name']}\n**Location:** {c.get('vicinity', 'Manual Entry')}\n**Rating:** {c.get('rating', 'N/A')} ({c.get('review_count', '0')} reviews)\n**Website:** {c.get('website', 'N/A')}\n{analysis}")
+            seen.add(c["name"])
+    competitors = "\n\n".join(unique_competitors[:10])
+
+    whitespace_prompt = f"""
+    Based on the patron personas below, identify three whitespace brand personality opportunities that aren't currently dominant.
+    For each opportunity:
+    - List 3 underrepresented brand personality traits
+    - Name 2–3 patron personas who would likely be attracted
+    - Write a short brand strategy insight on how a new brand could embody this
+    Patron Personas:\n{personas}
+    """
+    whitespace_response = client.chat.completions.create(
+        model="gpt-4",
+        messages=[{"role": "user", "content": whitespace_prompt}],
+        temperature=0.75,
+        max_tokens=1000
+    )
+    whitespace = whitespace_response.choices[0].message.content
+
+    return {"zip_codes": zip_codes, "user_notes": user_notes, "service_styles": service_styles, "cuisine_types": cuisine_styles,
+            "competitor_mode": competitor_mode, "manual_competitors": manual_competitors, "personas": personas, "competitors": competitors, "whitespace": whitespace}
+
+# ---------- AUTHENTICATION ----------
+if "user" not in st.session_state:
+    st.session_state.user = None
+if "mode" not in st.session_state:
+    st.session_state.mode = "login"
+if "is_vip" not in st.session_state:
+    st.session_state.is_vip = False
+
+def fetch_is_vip(user_id):
+    response = supabase.table("users").select("is_vip").eq("id", user_id).execute()
+    if response.data:
+        return response.data[0]["is_vip"]
+    return False
+
+if st.session_state.mode == "login":
+    st.title("Login")
+    email = st.text_input("Email")
+    password = st.text_input("Password", type="password")
+    if st.button("Login"):
+        try:
+            response = supabase.auth.sign_in_with_password({"email": email, "password": password})
+            st.session_state.user = response.user
+            st.session_state.is_vip = fetch_is_vip(response.user.id)
+            st.session_state.mode = "input"
+            st.rerun()
+        except Exception as e:
+            st.error(f"Login failed: {e}")
+    if st.button("Register"):
+        st.session_state.mode = "register"
+        st.rerun()
+
+elif st.session_state.mode == "register":
+    st.title("Register")
+    email = st.text_input("Email")
+    password = st.text_input("Password", type="password")
+    if st.button("Register"):
+        try:
+            response = supabase.auth.sign_up({"email": email, "password": password})
+<<<<<<< HEAD
+            if response.session:  # Only if immediate session (confirmation disabled)
+                supabase.auth.set_session(response.session.access_token, response.session.refresh_token)
+=======
+            if response.user:
+>>>>>>> 24407fcc22a1a0177184646481f760d3903f74e4
+                supabase.table("users").insert({
+                    "id": response.user.id,
+                    "email": email,
+                    "created_at": time.strftime("%Y-%m-%d %H:%M:%S"),
+                    "is_vip": False
+                }).execute()
+                st.success("Registration successful! Please log in.")
+                st.session_state.mode = "login"
+                st.rerun()
+            else:
+                st.warning("Check your email to confirm registration.")
+        except Exception as e:
+            st.error(f"Registration failed: {e}")
+    if st.button("Back to Login"):
+        st.session_state.mode = "login"
+        st.rerun()
+
+else:
+    user = get_user()
+    if not user:
+        st.session_state.mode = "login"
+        st.rerun()
+    else:
+        st.sidebar.title("Navigation")
+        page = st.sidebar.radio("Go to", ["Generate Report", "My Reports"])
+
+        if page == "Generate Report":
+            st.title("💃🏻 Matador")
+            st.subheader("Command the Crowd.")
+            st.write("Enter up to 5 US ZIP codes to generate local audience personas and analyze competitive restaurant brands.")
+            st.info("Enter a promo code at checkout for discounts on this report (e.g., 20% off).")
+
+            zip_codes_input = st.text_input("Enter up to 5 ZIP Codes, separated by commas")
+            user_notes = st.text_area("Add any known local insights, cultural notes, or behaviors (optional)")
+            mode = st.radio("Choose persona generation mode:", ["Cumulative (combined)", "Individual (per ZIP)"])
+            selected_service_styles = st.multiselect(
+                "Select Service Style(s):",
+                options=list(service_style_map.keys())
+            )
+            cuisine_styles = st.multiselect(
+                "Select Cuisine Type(s):",
+                [
+                    "Mexican", "Chinese", "Japanese", "Italian", "Thai", "Vietnamese",
+                    "Indian", "American", "Korean", "Mediterranean", "Seafood",
+                    "Barbecue", "Vegan", "Vegetarian", "Burgers", "Pizza", "Coffee",
+                    "Bakery", "Sushi", "Middle Eastern", "Caribbean", "French", "Greek",
+                    "Soul Food", "Southern", "German", "Cuban", "Hawaiian", "Brazilian",
+                    "Spanish", "Turkish", "African", "Tapas", "Steakhouse", "Hot Pot"
+                ]
+            )
+            competitor_mode = st.radio("Choose how to analyze competitors:", ["Auto via Google Places", "Manual Entry"])
+            manual_competitors = []
+            if competitor_mode == "Manual Entry":
+                with st.expander("Add Manual Competitor Info"):
+                    for i in range(3):
+                        name = st.text_input(f"Competitor {i+1} Name", key=f"manual_name_{i}")
+                        website = st.text_input(f"Competitor {i+1} Website", key=f"manual_site_{i}")
+                        if name:
+                            manual_competitors.append({"name": name, "website": website})
+
+            if st.button("Generate Report"):
+                zip_codes = [z.strip() for z in zip_codes_input.split(",") if z.strip()]
+                if 1 <= len(zip_codes) <= 5:
+                    user_reports = count_user_reports(user.id)
+                    if user_reports < 3 or st.session_state.is_vip:
+                        with st.spinner("Generating report..."):
+                            report_data = generate_report(zip_codes, user_notes, mode, selected_service_styles, cuisine_styles, competitor_mode, manual_competitors)
+                            save_report(user.id, report_data)
+                            st.session_state.report_data = report_data
+                            st.session_state.mode = "report"
+                            st.rerun()
+                    else:
+                        # Persist inputs for post-payment generation
+                        st.session_state.pending_zip_codes = zip_codes
+                        st.session_state.pending_user_notes = user_notes
+                        st.session_state.pending_mode = mode
+                        st.session_state.pending_service_styles = selected_service_styles
+                        st.session_state.pending_cuisine_styles = cuisine_styles
+                        st.session_state.pending_competitor_mode = competitor_mode
+                        st.session_state.pending_manual_competitors = manual_competitors
+                        session = stripe.checkout.Session.create(
+                            payment_method_types=["card"],
+                            line_items=[{"price": STRIPE_PRODUCT_PRICE_ID, "quantity": 1}],
+                            mode="payment",
+                            allow_promotion_codes=True,
+                            success_url=f"{st.get_option('browser.serverAddress')}?session_id={{CHECKOUT_SESSION_ID}}",
+                            cancel_url=st.get_option("browser.serverAddress")
+                        )
+                        st.write(f'<script>window.location.href = "{session.url}";</script>', unsafe_allow_html=True)
+                else:
+                    st.warning("Please enter between 1 and 5 ZIP codes.")
+
+        elif page == "My Reports":
+            st.title("My Reports")
+            reports = supabase.table("reports").select("*").eq("user_id", user.id).order("generated_at", desc=True).execute()
+            for report in reports.data:
+                st.write(f"**Generated on:** {report['generated_at']} | **ZIP Codes:** {json.loads(report['zip_codes'])}")
+                if st.button(f"View Report {report['id']}"):
+                    st.session_state.report_data = {
+                        "personas": report["personas"],
+                        "competitors": report["competitors"],
+                        "whitespace": report["whitespace"]
+                    }
+                    st.session_state.mode = "report"
+                    st.rerun()
+
+        if st.session_state.mode == "report":
+            st.title("Report")
+            tabs = st.tabs(["Patrons", "Competition", "White Space"])
+            with tabs[0]:
+                st.markdown(st.session_state.report_data["personas"])
+            with tabs[1]:
+                st.markdown(st.session_state.report_data["competitors"])
+            with tabs[2]:
+                st.markdown(st.session_state.report_data["whitespace"])
+            if st.button("Back"):
+                st.session_state.mode = "input"
+                st.rerun()
+
+        query_params = st.query_params
+        if "session_id" in query_params:
+            session_id = query_params["session_id"]
+            session = stripe.checkout.Session.retrieve(session_id)
+            if session.payment_status == "paid":
+                # Retrieve persisted inputs
+                zip_codes = st.session_state.get("pending_zip_codes", [])
+                user_notes = st.session_state.get("pending_user_notes", "")
+                mode = st.session_state.get("pending_mode", "Cumulative (combined)")
+                selected_service_styles = st.session_state.get("pending_service_styles", [])
+                cuisine_styles = st.session_state.get("pending_cuisine_styles", [])
+                competitor_mode = st.session_state.get("pending_competitor_mode", "Auto via Google Places")
+                manual_competitors = st.session_state.get("pending_manual_competitors", [])
+                with st.spinner("Generating report after payment..."):
+                    report_data = generate_report(zip_codes, user_notes, mode, selected_service_styles, cuisine_styles, competitor_mode, manual_competitors)
+                    save_report(user.id, report_data)
+                    st.session_state.report_data = report_data
+                    st.session_state.mode = "report"
+                    # Clear pending data
+                    for key in ["pending_zip_codes", "pending_user_notes", "pending_mode", "pending_service_styles", "pending_cuisine_styles", "pending_competitor_mode", "pending_manual_competitors"]:
+                        if key in st.session_state:
+                            del st.session_state[key]
+                    st.rerun()
+            else:
+                st.error("Payment failed or was canceled.")
+                st.session_state.mode = "input"
+<<<<<<< HEAD
+                st.rerun()
+=======
+                st.rerun()
+>>>>>>> 24407fcc22a1a0177184646481f760d3903f74e4
