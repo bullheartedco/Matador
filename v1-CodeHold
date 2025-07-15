@@ -1,27 +1,26 @@
+# Matador: Streamlit App for Local Patron & Competitor Analysis
 import streamlit as st
 import requests
 from openai import OpenAI
 from bs4 import BeautifulSoup
-from supabase import create_client, Client
-import stripe
-import json
-import time
 
 # ---------- CONFIG ----------
-st.set_page_config(page_title="Matador: Patron, Competition, Whitespace Strategy", layout="wide")
+st.set_page_config(page_title="Matador: Local Audience Profiler", layout="wide")
 
-# ---------- SECRETS ----------
-SUPABASE_URL = st.secrets["SUPABASE_URL"]
-SUPABASE_KEY = st.secrets["SUPABASE_KEY"]
-STRIPE_API_KEY = st.secrets["STRIPE_API_KEY"]
-STRIPE_PRODUCT_PRICE_ID = st.secrets["STRIPE_PRODUCT_PRICE_ID"]
+# ---------- OPENAI CLIENT ----------
 client = OpenAI(api_key=st.secrets["OPENAI_API_KEY"])
 
-# ---------- CLIENTS ----------
-supabase: Client = create_client(SUPABASE_URL, SUPABASE_KEY)
-stripe.api_key = STRIPE_API_KEY
+# ---------- APP HEADER ----------
+st.title("💃🏻 Matador")
+st.subheader("Command the Crowd.")
+st.write("Enter up to 5 US ZIP codes to generate local audience personas and analyze competitive restaurant brands.")
 
-# Google-Aligned Service Styles (defined here for global access)
+# ---------- INPUT ----------
+zip_codes_input = st.text_input("Enter up to 5 ZIP Codes, separated by commas")
+user_notes = st.text_area("Add any known local insights, cultural notes, or behaviors (optional)")
+mode = st.radio("Choose persona generation mode:", ["Cumulative (combined)", "Individual (per ZIP)"])
+
+# Google-Aligned Service Styles
 service_style_map = {
     "Full Service": ["restaurant", "casual_dining", "fine_dining"],
     "Fast Casual": ["restaurant", "meal_takeaway"],
@@ -33,30 +32,36 @@ service_style_map = {
     "Food Truck": ["food_truck"]
 }
 
-# ---------- HELPER FUNCTIONS ----------
-def get_user():
-    return st.session_state.get("user")
+selected_service_styles = st.multiselect(
+    "Select Service Style(s):",
+    options=list(service_style_map.keys())
+)
 
-def count_user_reports(user_id):
-    response = supabase.table("reports").select("id").eq("user_id", user_id).execute()
-    return len(response.data)
+# Expanded Cuisine Types
+cuisine_styles = st.multiselect(
+    "Select Cuisine Type(s):",
+    [
+        "Mexican", "Chinese", "Japanese", "Italian", "Thai", "Vietnamese",
+        "Indian", "American", "Korean", "Mediterranean", "Seafood",
+        "Barbecue", "Vegan", "Vegetarian", "Burgers", "Pizza", "Coffee",
+        "Bakery", "Sushi", "Middle Eastern", "Caribbean", "French", "Greek",
+        "Soul Food", "Southern", "German", "Cuban", "Hawaiian", "Brazilian",
+        "Spanish", "Turkish", "African", "Tapas", "Steakhouse", "Hot Pot"
+    ]
+)
 
-def save_report(user_id, data):
-    report_data = {
-        "user_id": user_id,
-        "zip_codes": json.dumps(data["zip_codes"]),
-        "user_notes": data["user_notes"],
-        "service_styles": json.dumps(data["service_styles"]),
-        "cuisine_types": json.dumps(data["cuisine_types"]),
-        "competitor_mode": data["competitor_mode"],
-        "manual_competitors": json.dumps(data["manual_competitors"]),
-        "personas": data["personas"],
-        "competitors": data["competitors"],
-        "whitespace": data["whitespace"],
-        "generated_at": time.strftime("%Y-%m-%d %H:%M:%S")
-    }
-    supabase.table("reports").insert(report_data).execute()
+competitor_mode = st.radio("Choose how to analyze competitors:", ["Auto via Google Places", "Manual Entry"])
+manual_competitors = []
 
+if competitor_mode == "Manual Entry":
+    with st.expander("Add Manual Competitor Info"):
+        for i in range(3):
+            name = st.text_input(f"Competitor {i+1} Name", key=f"manual_name_{i}")
+            website = st.text_input(f"Competitor {i+1} Website", key=f"manual_site_{i}")
+            if name:
+                manual_competitors.append({"name": name, "website": website})
+
+# ---------- DATA FUNCTIONS ----------
 def fetch_census_for_zips(zip_codes):
     rows = []
     for zip_code in zip_codes:
@@ -70,15 +75,19 @@ def fetch_census_for_zips(zip_codes):
         if response.status_code == 200:
             data = response.json()
             if len(data) > 1:
-                rows.append(dict(zip(data[0], data[1])))
+                labels = data[0]
+                values = data[1]
+                rows.append(dict(zip(labels, values)))
     return rows
 
 def get_lat_lon(zip_code):
     url = f"https://maps.googleapis.com/maps/api/geocode/json?address={zip_code}&key={st.secrets['GOOGLE_API_KEY']}"
     response = requests.get(url)
-    if response.status_code == 200 and response.json().get("results"):
-        location = response.json()["results"][0]["geometry"]["location"]
-        return location["lat"], location["lng"]
+    if response.status_code == 200:
+        results = response.json().get("results")
+        if results:
+            location = results[0]["geometry"]["location"]
+            return location["lat"], location["lng"]
     return None, None
 
 def get_places_data(lat, lon, search_terms):
@@ -90,6 +99,7 @@ def get_places_data(lat, lon, search_terms):
     )
     nearby_response = requests.get(nearby_url)
     raw_places = []
+
     if nearby_response.status_code == 200:
         data = nearby_response.json()
         for result in data.get("results", []):
@@ -104,6 +114,7 @@ def get_places_data(lat, lon, search_terms):
                 "place_id": result.get("place_id"),
                 "score": score
             })
+
     top_places = sorted(raw_places, key=lambda x: x["score"], reverse=True)[:10]
     places = []
     for place in top_places:
@@ -112,7 +123,10 @@ def get_places_data(lat, lon, search_terms):
             f"place_id={place['place_id']}&fields=website&key={st.secrets['GOOGLE_API_KEY']}"
         )
         details_response = requests.get(details_url)
-        website = details_response.json().get("result", {}).get("website", "") if details_response.status_code == 200 else ""
+        website = ""
+        if details_response.status_code == 200:
+            website = details_response.json().get("result", {}).get("website", "")
+
         places.append({
             "name": place["name"],
             "vicinity": place["vicinity"],
@@ -120,6 +134,7 @@ def get_places_data(lat, lon, search_terms):
             "review_count": place["review_count"],
             "website": website
         })
+
     return places
 
 def get_website_text(url):
@@ -127,35 +142,42 @@ def get_website_text(url):
         response = requests.get(url, timeout=10)
         soup = BeautifulSoup(response.text, 'html.parser')
         return soup.get_text(separator=' ', strip=True)
-    except:
-        return "Unable to fetch website content."
+    except Exception as e:
+        return f"Error fetching website content: {e}"
 
 def analyze_brand_with_gpt(name, address, website_text):
     prompt = f"""
     You are a brand strategist. Based on the following content from the restaurant's website, analyze and return:
+
     1. The brand’s tone of voice
     2. Three personality traits that reflect the brand
     3. Their core brand message or positioning
     4. What they emphasize in marketing (e.g. ingredients, experience, convenience)
     5. Overall impression in 1 sentence
+
     Restaurant Name: {name}
     Location: {address}
     Website Text: {website_text[:3000]}
     """
-    response = client.chat.completions.create(
-        model="gpt-3.5-turbo",
-        messages=[{"role": "user", "content": prompt}],
-        temperature=0.7,
-        max_tokens=500
-    )
-    return response.choices[0].message.content
+    try:
+        response = client.chat.completions.create(
+            model="gpt-3.5-turbo",
+            messages=[{"role": "user", "content": prompt}],
+            temperature=0.7,
+            max_tokens=500
+        )
+        return response.choices[0].message.content
+    except Exception as e:
+        return f"Error analyzing brand: {e}"
 
 def build_patron_prompt(zip_codes, user_notes, mode):
     if mode == "Cumulative (combined)":
         return f"""
 You are an expert in psychographics, anthropology, and brand strategy.
+
 Based on the following data for a 10-mile radius around ZIP code(s): {', '.join(zip_codes)}
 - User Notes: {user_notes}
+
 Generate 3–5 audience personas with the following:
 1. Persona Name (must be a collective name like "Sun Chasers", not an individual name)
 2. Summary of their lifestyle and cultural tendencies
@@ -165,7 +187,7 @@ Generate 3–5 audience personas with the following:
 6. 5 brands they love that reflect their values
 7. Estimated prevalence (% of total population they represent)
 """
-    else:
+    elif mode == "Individual (per ZIP)":
         prompt = ""
         for z in zip_codes:
             prompt += f"""
@@ -178,39 +200,79 @@ For ZIP code {z}, generate:
   5. Influenced secondary groups
   6. 5 brands they love
   7. Prevalence estimate
+
 User Notes: {user_notes}
+
 """
-        return f"You are an expert in psychographics, anthropology, and brand strategy.\nBelow are prompts for each ZIP code. Answer each separately.\n{prompt}"
+        return f"""
+You are an expert in psychographics, anthropology, and brand strategy.
 
-def generate_report(zip_codes, user_notes, mode, service_styles, cuisine_styles, competitor_mode, manual_competitors):
-    census_data = fetch_census_for_zips(zip_codes)
-    demographic_summary = ""
-    if census_data:
-        for entry in census_data:
-            demographic_summary += f"- {entry['NAME']}: Population {entry.get('B01001_001E', 'N/A')}, "
-            demographic_summary += f"Median Income ${entry.get('B19013_001E', 'N/A')}, "
-            demographic_summary += f"White %: {entry.get('B02001_002E', 'N/A')}, "
-            demographic_summary += f"Black %: {entry.get('B02001_003E', 'N/A')}, "
-            demographic_summary += f"Asian %: {entry.get('B02001_005E', 'N/A')}\n"
-    else:
-        demographic_summary = "No Census data available."
-    
-    full_prompt = (
-        "Use this Census data ethically and sensitively to guide audience personas for restaurant brand strategy. "
-        f"Demographic Snapshot:\n{demographic_summary}\n\n" + build_patron_prompt(zip_codes, user_notes, mode)
-    )
-    personas_response = client.chat.completions.create(
-        model="gpt-4",
-        messages=[{"role": "user", "content": full_prompt}],
-        temperature=0.75,
-        max_tokens=1600
-    )
-    personas = personas_response.choices[0].message.content
+Below are prompts for each ZIP code. Answer each separately.
 
-    search_terms = []
-    for style in service_styles:
-        search_terms += service_style_map.get(style, [])
-    search_terms += cuisine_styles
+{prompt}
+"""
+
+# ---------- RUN BUTTON ----------
+if st.button("Generate Report"):
+    zip_codes = [z.strip() for z in zip_codes_input.split(",") if z.strip()]
+    if 1 <= len(zip_codes) <= 5:
+        tabs = st.tabs(["Patrons", "Competition", "White Space"])
+
+        with tabs[0]:
+            with st.spinner("Generating audience personas..."):
+                try:
+                    # Fetch Census Data once
+                    census_data = fetch_census_for_zips(zip_codes)
+
+                    # Format Demographic Summary
+                    if census_data:
+                        demographic_summary = ""
+                        for entry in census_data:
+                            demographic_summary += f"- {entry['NAME']}: Population {entry.get('B01001_001E', 'N/A')}, "
+                            demographic_summary += f"Median Income ${entry.get('B19013_001E', 'N/A')}, "
+                            demographic_summary += f"White %: {entry.get('B02001_002E', 'N/A')}, "
+                            demographic_summary += f"Black %: {entry.get('B02001_003E', 'N/A')}, "
+                            demographic_summary += f"Asian %: {entry.get('B02001_005E', 'N/A')}\n"
+                    else:
+                        demographic_summary = "No Census data available for these ZIPs."
+
+                    # Build GPT Prompt
+                    full_prompt = (
+                        "Use this Census data ethically and sensitively to guide audience personas for restaurant brand strategy. "
+                        "Do not generalize by race or income, but infer cultural drivers where appropriate.\n\n"
+                        f"Demographic Snapshot:\n{demographic_summary}\n\n"
+                        + build_patron_prompt(zip_codes, user_notes, mode)
+                    )
+
+                    # GPT Call
+                    response = client.chat.completions.create(
+                        model="gpt-4",
+                        messages=[{"role": "user", "content": full_prompt}],
+                        temperature=0.75,
+                        max_tokens=1600
+                    )
+                    result = response.choices[0].message.content
+                    st.session_state["patron_personas_raw"] = result  # Save for white space tab
+                    personas = result.split("\n\n")
+
+                    # Display Personas
+                    for p in personas:
+                        if p.strip():
+                            lines = p.strip().split("\n")
+                            title_line = lines[0]
+                            other_lines = lines[1:]
+                            st.markdown(f"### {title_line}")
+                            for line in other_lines:
+                                st.markdown(f"- {line}")
+                except Exception as e:
+                    st.error(f"Error generating personas: {e}")
+
+        with tabs[1]:
+            st.subheader("Top Competitor Analysis")
+            search_terms = []
+            for style in selected_service_styles:
+                search_terms += service_style_map.get(style, [])
+            search_terms += cuisine_styles
 
             competitors = []
             for zip_code in zip_codes:
