@@ -288,12 +288,8 @@ elif st.session_state.mode == "register":
     if st.button("Register"):
         try:
             response = supabase.auth.sign_up({"email": email, "password": password})
-<<<<<<< HEAD
             if response.session:  # Only if immediate session (confirmation disabled)
                 supabase.auth.set_session(response.session.access_token, response.session.refresh_token)
-=======
-            if response.user:
->>>>>>> 24407fcc22a1a0177184646481f760d3903f74e4
                 supabase.table("users").insert({
                     "id": response.user.id,
                     "email": email,
@@ -439,8 +435,4 @@ else:
             else:
                 st.error("Payment failed or was canceled.")
                 st.session_state.mode = "input"
-<<<<<<< HEAD
                 st.rerun()
-=======
-                st.rerun()
->>>>>>> 24407fcc22a1a0177184646481f760d3903f74e4
