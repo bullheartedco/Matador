@@ -294,8 +294,24 @@ else:
         page = st.sidebar.radio("Go to", ["Generate Report", "My Reports"])
 
         if page == "Generate Report":
-            st.title("💃🏻 Matador")
-            st.subheader("Command the Crowd.")
+            import streamlit as st
+
+# Hide default Streamlit header/menu
+            hide_streamlit_style = """
+    <style>
+    #MainMenu {visibility: hidden;}
+    footer {visibility: hidden;}
+    header {visibility: hidden;}
+    </style>
+"""
+            st.markdown(hide_streamlit_style, unsafe_allow_html=True)
+
+            # Custom header with logo
+            st.markdown("""
+                <div style="display: flex; justify-content: center; align-items: center;">
+                    <img src="https://images.squarespace-cdn.com/content/68597a8437abcd6d55658f07/8bb578ef-7515-49dd-a519-2ad8921f008f/matador-app-logo.png" width="200" alt="Logo">
+                </div>
+            """, unsafe_allow_html=True)
             st.write("Enter up to 5 US ZIP codes to generate local audience personas and analyze competitive restaurant brands.")
 
             report_name = st.text_input("Report Name (optional)")
@@ -332,7 +348,7 @@ else:
                 if 1 <= len(zip_codes) <= 5:
                     user_reports = count_user_reports(user.id)
                     if st.session_state.is_vip or user_reports < st.session_state.report_limit:
-                        with st.spinner("Generating report..."):
+                        with st.spinner("Generating report...this can take up to 1-2 mins"):
                             report_data = generate_report(zip_codes, user_notes, mode, selected_service_styles, cuisine_styles, competitor_mode, manual_competitors, report_name)
                             save_report(user.id, report_data)
                             st.session_state.report_data = report_data
