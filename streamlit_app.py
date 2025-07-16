@@ -237,11 +237,11 @@ def generate_report(zip_codes, user_notes, mode, service_styles, cuisine_styles,
     competitors = "\n\n".join(unique_competitors[:10])
 
     whitespace_prompt = f"""
-    Based on the patron personas and competition below, identify three whitespace brand personality opportunities that aren't currently dominant.
+    Based on the patron personas and competition below, identify three areas of opportunity where patron needs and wants aren't addressed by existing competition.
     For each opportunity:
     - List 3 underrepresented brand personality traits within the restaurant competitive landscape
-    - Name 2–3 patron personas who would likely be attracted
-    - Write a short brand strategy insight on how a new restaurant brand could embody this
+    - Name 2 or 3 patron personas who would likely be attracted
+    - Write a short restaurant brand strategy insight on how a new restaurant brand could embody the traits and opportunity
     Patron Personas:\n{personas}
     """
     whitespace_response = client.chat.completions.create(
