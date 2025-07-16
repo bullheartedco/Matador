@@ -310,7 +310,7 @@ else:
             st.markdown("""
                 <div style="display: flex; justify-content: left; align-items: left;">
                     <img src="https://images.squarespace-cdn.com/content/68597a8437abcd6d55658f07/8bb578ef-7515-49dd-a519-2ad8921f008f/matador-app-logo.png" width="400" alt="Matador Logo">
-                </div>
+                <br/><br/></div>
             """, unsafe_allow_html=True)
             st.write("Enter up to 5 US ZIP codes to generate local audience personas and analyze competitive restaurant brands.")
 
