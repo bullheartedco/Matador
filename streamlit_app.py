@@ -8,7 +8,7 @@ import json
 import time
 
 # ---------- CONFIG ----------
-st.set_page_config(page_title="Matador: Patron, Competition, Whitespace Strategy", layout="wide")
+st.set_page_config(page_title="Matador: Local Audience Profiler", layout="wide")
 
 # ---------- SECRETS ----------
 SUPABASE_URL = st.secrets["SUPABASE_URL"]
