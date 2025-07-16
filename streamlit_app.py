@@ -19,6 +19,11 @@ client = OpenAI(api_key=st.secrets["OPENAI_API_KEY"])
 
 # ---------- CLIENTS ----------
 supabase: Client = create_client(SUPABASE_URL, SUPABASE_KEY)
+
+# Restore session if tokens exist
+if 'access_token' in st.session_state and 'refresh_token' in st.session_state:
+    supabase.auth.set_session(st.session_state['access_token'], st.session_state['refresh_token'])
+
 stripe.api_key = STRIPE_API_KEY
 
 # Google-Aligned Service Styles (defined here for global access)
@@ -271,6 +276,9 @@ if st.session_state.mode == "login":
     if st.button("Login"):
         try:
             response = supabase.auth.sign_in_with_password({"email": email, "password": password})
+            supabase.auth.set_session(response.session.access_token, response.session.refresh_token)
+            st.session_state['access_token'] = response.session.access_token
+            st.session_state['refresh_token'] = response.session.refresh_token
             st.session_state.user = response.user
             st.session_state.is_vip = fetch_is_vip(response.user.id)
             st.session_state.mode = "input"
@@ -290,6 +298,8 @@ elif st.session_state.mode == "register":
             response = supabase.auth.sign_up({"email": email, "password": password})
             if response.session:  # Only if immediate session (confirmation disabled)
                 supabase.auth.set_session(response.session.access_token, response.session.refresh_token)
+                st.session_state['access_token'] = response.session.access_token
+                st.session_state['refresh_token'] = response.session.refresh_token
                 supabase.table("users").insert({
                     "id": response.user.id,
                     "email": email,
